@@ -1,0 +1,54 @@
+services:
+  perchguard:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../../.env
+    environment:
+      - PERCHGUARD_ADDR=:8080
+    command: ["--mode=server"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../deployments/prometheus/perchguard.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - perchguard
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=perchguard
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DATAPROXY_ACCESS_CONTROL_ALLOW_METHODS=GET,POST,PUT,DELETE
+      - GF_FEATURE_TOGGLES_ENABLE=accessControlOnCall
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_PLUGINS_ENABLE_ALPHA=true
+      - GF_DATAPROXY_SEND_USER_HEADER=true
+      - GF_DATAPROXY_TIMEOUT=30
+    volumes:
+      - ../../deployments/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ../../deployments/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+
+volumes:
+  loki-data:
+  grafana-data:

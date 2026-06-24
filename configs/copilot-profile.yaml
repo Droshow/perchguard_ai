@@ -1,0 +1,188 @@
+## PerchGuard — Copilot / Local IDE Policy Profile
+##
+## Use with: perchguard --mode=copilot
+## Or:       PERCHGUARD_POLICY=configs/copilot-profile.yaml perchguard --mode=mcp-proxy
+##
+## Design rationale:
+##   The developer is present at the keyboard. Human-in-the-loop oversight,
+##   fleet behavioural analysis, and semantic intent scoring are unnecessary
+##   when a human can observe and interrupt at any time.
+##
+##   What IS real regardless of developer presence:
+##     - Denial-of-wallet: a runaway Copilot loop burns money the same way
+##     - Secret bleed: Copilot reading .env and forwarding it via a tool call
+##     - Prompt injection: malicious content in files Copilot reads
+##     - Destructive commands: git push --force, rm -rf, DROP TABLE
+
+enforcement: enforce
+
+policies:
+
+  ## ── COST CONTROL — Primary reason for this profile ──────────────────────────
+
+  sessionBudget:
+    enabled: true
+    delegationFraction: 0.5
+    limits:
+      maxTokensPerSession: 500000        # ~$1.50 at Claude Sonnet pricing
+      maxCostPerSessionUSD: 5.00         # hard USD cap — TERMINATE before this is exceeded
+      maxToolCallsPerSession: 200
+      maxToolCallsPerMinute: 30
+      idleTimeoutMinutes: 15             # evict if no tool call in 15 min
+      maxDurationMinutes: 120            # hard cap: 2-hour session maximum
+    anomaly:
+      velocityWindowMinutes: 5
+      velocityThresholdCalls: 20         # 20+ calls in 5 min triggers anomaly
+      velocityMaxAvgDrift: 0.3           # low diversity = repetitive loop
+      velocityRiskContribution: 0.15
+    action: TERMINATE_SESSION
+
+  ## ── SECURITY CORE — Real threats even with developer present ─────────────────
+
+  promptInjection:
+    enabled: true
+    suspiciousPatterns:
+      - "ignore previous instructions"
+      - "disregard your system prompt"
+      - "you are now"
+      - "pretend you are"
+      - "your new instructions"
+      - "<!-- inject"
+      - "[SYSTEM OVERRIDE]"
+    scanFields:
+      - user_intent
+      - tool_parameters
+      - tool_output
+    action: DENY
+
+  dataExfiltration:
+    enabled: true
+    allowedDestinations:
+      - "*.internal"
+      - "api.github.com"
+      - "registry.npmjs.org"
+      - "pypi.org"
+      - "crates.io"
+    blockedDestinations:
+      - "*.ngrok.io"
+      - "pastebin.com"
+      - "requestbin.*"
+      - "webhook.site"
+    blockUnknownDestinations: false      # less aggressive than autonomous mode; developer manages outbound
+    action: DENY
+
+  toolAuthorization:
+    enabled: true
+    agentRoles:
+      - role: "developer_agent"           # default role used by mcp-proxy / copilot mode
+        allowedTools:
+          - "read_file"
+          - "write_file"
+          - "list_directory"
+          - "create_directory"
+          - "search_files"
+          - "get_file_info"
+          - "read_multiple_files"
+          - "bash"
+          - "run_terminal_command"
+          - "web_search"
+          - "web_fetch"
+          - "github_*"                    # GitHub MCP tools allowed broadly
+        deniedTools:
+          - "bash:rm -rf"
+          - "bash:*--force*"
+          - "bash:*--no-verify*"
+          - "database:drop_*"
+          - "cloud:iam:*"
+    action: DENY
+
+  parameterSanitization:
+    enabled: true
+    rules:
+      - match: "bash"
+        containsAny: ["rm ", "drop ", "delete ", "truncate "]
+        inject: "--dry-run"
+        unless: "dry_run_confirmed=true"
+      - match: "bash"
+        stripFlags:
+          - "-rf"
+          - "--force"
+          - "--no-verify"
+          - "--skip-hooks"
+
+  leastPrivilege:
+    enabled: true
+    fileOperations:
+      blockPathTraversal: true           # blocks ../../../etc/passwd style traversal
+
+  outputValidation:
+    enabled: true
+    scanToolOutputs: true
+    suspiciousOutputPatterns:
+      # Prompt injection markers
+      - "SYSTEM:"
+      - "[[HIDDEN INSTRUCTION]]"
+      - "ignore all previous"
+      - "your new objective is"
+      # Private keys (PEM headers are distinctive and low false-positive)
+      - "-----BEGIN RSA PRIVATE KEY-----"
+      - "-----BEGIN EC PRIVATE KEY-----"
+      - "-----BEGIN OPENSSH PRIVATE KEY-----"
+      - "-----BEGIN PRIVATE KEY-----"
+      # Cloud / API key prefixes
+      - "AKIA"                           # AWS access key ID prefix
+      - "AWS_SECRET_ACCESS_KEY"          # .env field name
+      - "ghp_"                           # GitHub personal access token
+      - "ghs_"                           # GitHub server-to-server token
+      - "github_pat_"                    # GitHub fine-grained PAT
+      - "sk-ant-api"                     # Anthropic API key
+      - "sk-proj-"                       # OpenAI project key
+    maxOutputSizeBytes: 2097152          # 2 MB — generous for local IDE use
+    action: SANITIZE
+    sanitizeMode: "redact"
+    redactReplacement: "[REDACTED BY PERCHGUARD]"
+
+  ## ── AUDIT — Always on ────────────────────────────────────────────────────────
+
+  audit:
+    enabled: true
+    logLevel: "info"
+    logAllDecisions: true
+    logToolParameters: false             # reduce noise in local dev; flip to true to debug
+    redactedFields:
+      - "password"
+      - "secret"
+      - "api_key"
+      - "token"
+      - "authorization"
+    exporters:
+      - type: "stdout"
+
+  ## ── PHASE 1–5 AUTONOMOUS AGENT CAPABILITIES — disabled for Copilot ──────────
+  ##
+  ## These are designed for unattended autonomous agents in cluster environments.
+  ## The developer's presence replaces the need for all of them.
+  ## Re-enable if you deploy PerchGuard in a team server context where Copilot
+  ## sessions run unattended (e.g. CI-driven agentic pipelines).
+
+  semanticFirewall:
+    enabled: false                       # phase 1-5: intended for autonomous agent environment, not copilot
+
+  humanReview:
+    enabled: false                       # developer is the human reviewer
+    webhookURL: ""
+    timeoutSeconds: 60
+    autoDenyOnTimeout: true
+
+  agentFleet:
+    enabled: false                       # phase 1-5: intended for autonomous agent environment, not copilot
+    driftThreshold: 0.6
+    behaviorWindowSize: 10
+    attackChainEnabled: false
+
+  depthLimiter:
+    enabled: false                       # phase 1-5: no sub-agent spawning in Copilot IDE mode
+    maxAgentNestingDepth: 3
+    maxParallelAgents: 1
+    maxSubtaskChainLength: 5
+    action: DENY

@@ -1,0 +1,66 @@
+# Binaries
+/perchguard
+*.exe
+*.out
+*.test
+
+# Build output
+/bin/
+/dist/
+
+# Test & coverage
+*.coverprofile
+coverage.html
+coverage.out
+
+# Go workspace
+/vendor/
+*.work
+*.work.sum
+
+# TLS / secrets
+/tls/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+.env
+.env.*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artefacts
+/insurance-agent
+/mock-agent
+/redteam-agent
+
+# Snapshots — runtime output, not source
+/snapshots/*.jsonl
+/snapshots/fleet-history.jsonl
+scripts/__pycache__/
+
+# Demo script output
+/demo-output/
+
+# Claude Code local overrides
+.claude/settings.local.json
+.claude/session-context.md
+
+# Docs — large PDFs
+architecture/docs/EUAIACT_EN_TXT.pdf
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+.terraform.tfstate.lock.info

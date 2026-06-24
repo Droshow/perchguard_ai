@@ -1,0 +1,234 @@
+# PerchGuard Helm values
+# Override any value with: helm install perchguard ./deployments/helm/perchguard -f my-values.yaml
+
+# -- Number of replicas. Use 2+ in production.
+replicaCount: 1
+
+image:
+  repository: perchguard
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# -- Kubernetes service configuration.
+service:
+  type: ClusterIP
+  port: 8080
+  metricsPort: 8080  # /metrics is on the same port; split with a sidecar if needed
+  annotations: {}
+
+# -- Resource requests and limits.
+resources:
+  requests:
+    cpu: "100m"
+    memory: "64Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+
+# -- TLS configuration.
+# When enabled, PerchGuard listens on HTTPS using the provided cert/key.
+# In production set secretName to a cert-manager or ACM-issued secret.
+tls:
+  enabled: false
+  secretName: perchguard-tls  # K8s Secret with keys: tls.crt, tls.key
+
+# -- Secrets. All values are names of K8s Secret keys, not the secrets themselves.
+# Create secrets out-of-band: kubectl create secret generic perchguard-api-key --from-literal=key=pgmk-...
+secrets:
+  # Management API bearer key. Leave empty to auto-generate at startup (logged once).
+  apiKeySecretName: ""
+  apiKeySecretKey: "key"
+
+  # Anthropic API key for the semantic firewall. Leave empty to disable semantic firewall.
+  llmApiKeySecretName: ""
+  llmApiKeySecretKey: "api-key"
+
+# -- Audit JSONL sink PVC.
+# PerchGuard appends one JSON line per decision to ./snapshots/audit.jsonl.
+# Enable a PVC so audit records survive pod restarts.
+audit:
+  pvc:
+    enabled: true
+    size: 5Gi
+    storageClass: ""        # leave empty to use the cluster default
+    accessMode: ReadWriteOnce
+
+# -- Prometheus ServiceMonitor (requires prometheus-operator CRDs).
+# Set enabled: true if you have kube-prometheus-stack or similar installed.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # Additional labels to match your Prometheus operator's serviceMonitorSelector.
+  additionalLabels: {}
+
+# -- Horizontal Pod Autoscaler.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# -- AWS / EKS-specific switches. Used by cap 2.6 EKS Fargate deployment.
+aws:
+  enabled: false
+  # IRSA: IAM Role ARN to annotate the ServiceAccount with.
+  irsaRoleArn: ""
+  # EFS StorageClass for Fargate (Fargate cannot use EBS).
+  efsStorageClass: ""
+
+fargate:
+  enabled: false
+
+# -- PerchGuard policy. This YAML is mounted as /etc/perchguard/policies.yaml.
+# Hot-reload polls every 30s — edit the ConfigMap in place, no restart needed.
+# Default: observe mode (audit-only). Flip enforcement to "enforce" when ready.
+policy: |
+  enforcement: observe 
+
+  policies:
+
+    promptInjection:
+      enabled: true
+      suspiciousPatterns:
+        - "ignore previous instructions"
+        - "disregard your system prompt"
+        - "you are now"
+        - "pretend you are"
+        - "your new instructions"
+        - "<!-- inject"
+        - "[SYSTEM OVERRIDE]"
+      scanFields:
+        - user_intent
+        - tool_parameters
+        - tool_output
+      action: DENY
+
+    semanticFirewall:
+      enabled: false   # requires llmApiKeySecretName to be set
+      intentAlignmentThreshold: 0.6
+      action: HUMAN_REVIEW
+      llm:
+        model: "claude-haiku-4-5"
+        maxTokens: 300
+        temperature: 0.0
+        budgetMs: 10000
+        skipIfNoIntent: true
+
+    toolAuthorization:
+      enabled: true
+      agentRoles:
+        - role: "read_only_agent"
+          allowedTools:
+            - "read_file"
+            - "list_directory"
+            - "web_search"
+          deniedTools:
+            - "bash"
+            - "write_file"
+            - "delete_file"
+        - role: "developer_agent"
+          allowedTools:
+            - "read_file"
+            - "write_file"
+            - "bash"
+            - "list_directory"
+            - "web_search"
+          deniedTools:
+            - "bash:rm -rf"
+            - "bash:*--force*"
+      action: DENY
+
+    dataExfiltration:
+      enabled: true
+      allowedDestinations:
+        - "*.internal"
+        - "api.github.com"
+      blockedDestinations:
+        - "*.ngrok.io"
+        - "pastebin.com"
+        - "requestbin.*"
+      blockUnknownDestinations: false
+      action: DENY
+
+    parameterSanitization:
+      enabled: true
+      rules:
+        - match: "bash"
+          containsAny: ["rm ", "drop ", "delete ", "truncate "]
+          inject: "--dry-run"
+          unless: "dry_run_confirmed=true"
+        - match: "bash"
+          stripFlags:
+            - "-rf"
+            - "--force"
+            - "--no-verify"
+
+    leastPrivilege:
+      enabled: true
+      sqlInjection:
+        autoAppendWhereClause: true
+        userContextField: "session.user_id"
+      fileOperations:
+        allowedBasePaths:
+          - "/workspace"
+          - "/tmp/agent_scratch"
+        blockAbsolutePaths: true
+        blockPathTraversal: true
+
+    sessionBudget:
+      enabled: true
+      delegationFraction: 0.5
+      limits:
+        maxTokensPerSession: 500000
+        maxCostPerSessionUSD: 5.00
+        maxToolCallsPerSession: 200
+        maxToolCallsPerMinute: 30
+        idleTimeoutMinutes: 15
+        maxDurationMinutes: 120
+      action: TERMINATE_SESSION
+
+    depthLimiter:
+      enabled: true
+      maxAgentNestingDepth: 5
+      maxParallelAgents: 10
+      maxSubtaskChainLength: 20
+      action: DENY
+
+    outputValidation:
+      enabled: true
+      scanToolOutputs: true
+      suspiciousOutputPatterns:
+        - "SYSTEM:"
+        - "[[HIDDEN INSTRUCTION]]"
+        - "ignore all previous"
+      maxOutputSizeBytes: 1048576
+      action: SANITIZE
+      sanitizeMode: "redact"
+      redactReplacement: "[REDACTED]"
+
+    humanReview:
+      enabled: false
+      webhookURL: ""
+      timeoutSeconds: 60
+      autoDenyOnTimeout: true
+
+    agentFleet:
+      enabled: true
+      driftThreshold: 0.6
+      behaviorWindowSize: 10
+      attackChainEnabled: true
+
+    audit:
+      enabled: true
+      logLevel: "info"
+      logAllDecisions: true
+      logToolParameters: true
+      redactedFields:
+        - "password"
+        - "secret"
+        - "api_key"
+        - "token"
+        - "authorization"
+      exporters:
+        - type: "stdout"

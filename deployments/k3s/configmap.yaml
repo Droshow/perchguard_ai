@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: perchguard-policies
+  namespace: perchguard
+  labels:
+    app.kubernetes.io/name: perchguard
+  annotations:
+    # Edit here — the pod mounts this file at /etc/perchguard/policies.yaml.
+    # K3s will propagate changes within ~60s (no restart required with inotify reload in Phase 2).
+data:
+  policies.yaml: |
+    policies:
+      promptInjection:
+        enabled: true
+        suspiciousPatterns:
+          - "ignore previous instructions"
+          - "you are now"
+          - "disregard your"
+          - "act as"
+          - "new persona"
+        scanFields:
+          - user_intent
+          - tool_parameters
+
+      toolAuthorization:
+        enabled: true
+        agentRoles:
+          - role: "read_only_agent"
+            allowedTools: ["read_file", "list_directory", "web_search"]
+            deniedTools:  ["bash", "write_file", "http_post"]
+          - role: "developer_agent"
+            allowedTools: ["read_file", "write_file", "bash", "list_directory"]
+            deniedTools:  []
+          - role: "admin"
+            allowedTools: ["*"]
+            deniedTools:  []
+
+      dataExfiltration:
+        enabled: true
+        blockedDestinations:
+          - "*.ngrok.io"
+          - "pastebin.com"
+          - "requestbin.com"
+        blockUnknownDestinations: true
+
+      parameterSanitization:
+        enabled: true
+        rules:
+          - match: "bash"
+            containsAny: ["rm ", "drop ", "delete ", "truncate "]
+            inject: "--dry-run"
+          - match: "bash"
+            stripFlags: ["-rf", "--force", "--no-verify", "--hard"]
+
+      leastPrivilege:
+        enabled: true
+        sqlScoping:
+          enabled: true
+          userIDParam: "user_id"
+        pathTraversalBlocking:
+          enabled: true
+          allowedBasePaths: ["/app", "/tmp", "/home"]
+
+      sessionBudget:
+        limits:
+          maxTokensPerSession:    500000
+          maxCostPerSessionUSD:   5.00
+          maxToolCallsPerSession: 200
+          maxToolCallsPerMinute:  30
+
+      depthLimiter:
+        maxDepth: 5
+
+      audit:
+        enabled: true
+        redactFields: ["parameters.password", "parameters.token", "parameters.secret"]

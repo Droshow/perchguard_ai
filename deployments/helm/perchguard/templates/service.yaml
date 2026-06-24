@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "perchguard.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perchguard.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "perchguard.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: {{ if .Values.tls.enabled }}https{{ else }}http{{ end }}
+      port: {{ .Values.service.port }}
+      targetPort: {{ include "perchguard.containerPort" . }}
+      protocol: TCP

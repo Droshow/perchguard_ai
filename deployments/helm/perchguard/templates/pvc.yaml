@@ -1,0 +1,24 @@
+{{- if .Values.audit.pvc.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "perchguard.fullname" . }}-audit
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perchguard.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.audit.pvc.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.audit.pvc.size }}
+  {{- if .Values.aws.enabled }}
+  {{- if .Values.aws.efsStorageClass }}
+  storageClassName: {{ .Values.aws.efsStorageClass }}
+  {{- else if .Values.audit.pvc.storageClass }}
+  storageClassName: {{ .Values.audit.pvc.storageClass }}
+  {{- end }}
+  {{- else if .Values.audit.pvc.storageClass }}
+  storageClassName: {{ .Values.audit.pvc.storageClass }}
+  {{- end }}
+{{- end }}

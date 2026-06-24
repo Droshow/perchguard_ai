@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -v -race -count=1
+
+      - name: Build
+        run: CGO_ENABLED=0 go build -ldflags="-s -w" -o /tmp/perchguard ./cmd
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t perchguard:ci .
+
+      - name: Smoke test — healthz
+        run: |
+          docker run -d --name pg -p 8080:8080 perchguard:ci
+          sleep 3
+          curl -sf http://localhost:8080/healthz
+          docker rm -f pg
+
+      - name: Smoke test — mock-agent
+        run: |
+          docker build -t mock-agent:ci deployments/docker-compose/mock-agent/
+          docker network create pg-net
+          docker run -d --name pg --network pg-net -e PERCHGUARD_ADDR=:8080 perchguard:ci
+          sleep 3
+          docker run --rm --network pg-net \
+            -e PERCHGUARD_URL=http://pg:8080 \
+            mock-agent:ci
+          docker rm -f pg
+          docker network rm pg-net
+
+  # Publish image to GitHub Container Registry on merge to main.
+  # Requires: Settings → Actions → allow write packages permission.
+  publish:
+    name: Publish Image
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/perchguard:latest
+            ghcr.io/${{ github.repository_owner }}/perchguard:${{ github.sha }}

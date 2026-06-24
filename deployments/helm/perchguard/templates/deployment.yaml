@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "perchguard.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perchguard.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "perchguard.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "perchguard.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Force a rollout when the policy ConfigMap changes.
+        checksum/config: {{ .Values.policy | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "perchguard.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: perchguard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: {{ if .Values.tls.enabled }}https{{ else }}http{{ end }}
+              containerPort: {{ include "perchguard.containerPort" . }}
+              protocol: TCP
+          env:
+            - name: PERCHGUARD_POLICY
+              value: /etc/perchguard/policies.yaml
+            - name: PERCHGUARD_ADDR
+              value: {{ include "perchguard.listenAddr" . | quote }}
+            {{- if .Values.tls.enabled }}
+            - name: PERCHGUARD_TLS_CERT
+              value: /tls/tls.crt
+            - name: PERCHGUARD_TLS_KEY
+              value: /tls/tls.key
+            {{- end }}
+            {{- if .Values.secrets.apiKeySecretName }}
+            - name: PERCHGUARD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.apiKeySecretName }}
+                  key: {{ .Values.secrets.apiKeySecretKey }}
+            {{- end }}
+            {{- if .Values.secrets.llmApiKeySecretName }}
+            - name: PERCHGUARD_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.llmApiKeySecretName }}
+                  key: {{ .Values.secrets.llmApiKeySecretKey }}
+            {{- end }}
+          volumeMounts:
+            - name: policies
+              mountPath: /etc/perchguard
+              readOnly: true
+            {{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
+            {{- if .Values.audit.pvc.enabled }}
+            - name: audit-sink
+              mountPath: /app/snapshots
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ include "perchguard.containerPort" . }}
+              scheme: {{ include "perchguard.probeScheme" . }}
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ include "perchguard.containerPort" . }}
+              scheme: {{ include "perchguard.probeScheme" . }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 2
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: policies
+          configMap:
+            name: {{ include "perchguard.fullname" . }}-policies
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+        {{- end }}
+        {{- if .Values.audit.pvc.enabled }}
+        - name: audit-sink
+          persistentVolumeClaim:
+            claimName: {{ include "perchguard.fullname" . }}-audit
+        {{- end }}

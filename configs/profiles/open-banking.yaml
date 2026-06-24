@@ -1,0 +1,470 @@
+## PerchGuard — Open Banking / PSD2 Policy Profile
+## Phase 8 vertical: agentic open banking domain layer
+##
+## Use with: perchguard init --profile=open-banking
+## Replaces the default configs/policies.yaml for fintech deployments.
+##
+## Regulatory context: PSD2 (EU), Open Banking UK, FAPI 1.0 Advanced,
+## GDPR Article 5 (data minimisation), DORA Article 11 (incident audit).
+##
+## Admission thresholds are tighter than the generic profile.
+## REVIEW replaces DENY for ambiguous calls — every borderline case
+## must have a human decision in the audit record, not a silent block.
+##
+## "observe" mode is strongly recommended for the first 72 hours in a
+## new environment. Read audit.jsonl, calibrate the thresholds to your
+## institution's baseline, then flip to "enforce".
+
+enforcement: enforce
+
+## PSD2-aligned admission thresholds.
+## These apply globally; per-policy overrides below.
+admission:
+  reviewAbove: 0.50        # lower than generic (0.60) — financial context demands earlier escalation
+  blockAbove: 0.75         # lower than generic (0.90) — hard ceiling for financial actions
+  reviewTimeoutSecs: 120   # longer than generic (60s) — account holders may not be at keyboard
+  dualApprovalRoles:
+    - "escrow_agent"       # escrow releases require both parties to POST /api/review/{id}/approve
+
+policies:
+
+  ## 1. PROMPT INJECTION
+  ##    Extended with financial manipulation patterns.
+  ##    Social engineering vectors unique to payment context:
+  ##    "transfer to", "override amount", "ignore spending limit".
+
+  promptInjection:
+    enabled: true
+    suspiciousPatterns:
+      # Generic injection
+      - "ignore previous instructions"
+      - "disregard your system prompt"
+      - "you are now"
+      - "pretend you are"
+      - "your new instructions"
+      - "<!-- inject"
+      - "[SYSTEM OVERRIDE]"
+      # Financial manipulation — open banking additions
+      - "transfer to this account instead"
+      - "override the payment amount"
+      - "ignore the spending limit"
+      - "bypass SCA"
+      - "skip the approval step"
+      - "the beneficiary has changed"
+      - "update the IBAN to"
+      - "the correct sort code is"
+      - "emergency transfer"           # urgency injection — a classic social engineering trigger
+      - "wire transfer immediately"
+    scanFields:
+      - user_intent
+      - tool_parameters
+      - tool_output
+      - transaction_memo             # payment references are a live injection vector
+      - beneficiary_name             # social engineering: "HMRC URGENT" in name field
+      - remittance_information       # ISO 20022 field — narrative text, often user-controlled
+    action: DENY
+
+  ## 2. SEMANTIC FIREWALL
+  ##    Intent alignment scored against the declared session intent.
+  ##    In open banking, the declared intent is the PSD2 consent scope:
+  ##    "read balances", "initiate salary payment", "aggregate accounts for budgeting".
+  ##    Any tool call that drifts from the consented scope fails alignment.
+  ##
+  ##    Provider MUST NOT be the same as the governed agent's provider.
+  ##    See governance-provider-independence rule in memory.
+
+  semanticFirewall:
+    enabled: true
+    intentAlignmentThreshold: 0.55    # tighter than generic (0.60)
+    action: HUMAN_REVIEW
+    llm:
+      model: "claude-sonnet-4-6"      # REPLACE with non-Anthropic provider if agent is Claude
+      maxTokens: 400
+      temperature: 0.0
+      budgetMs: 10000
+      skipIfNoIntent: false           # in open banking, no declared intent = deny, not skip
+
+  ## 3. TOOL AUTHORIZATION — Open Banking Agent Roles
+  ##    Five regulated roles, each scoped to the minimum tools required.
+  ##    Role assignment happens at session registration via agent metadata.
+  ##
+  ##    AISP roles (account_aggregation, fraud_analyst, compliance):
+  ##      read-only by design; payment initiation is an explicit deny.
+  ##    PISP roles (payment_initiation):
+  ##      narrow write surface; all payment tools are subject to REVIEW threshold.
+  ##    Dual-purpose (escrow_agent):
+  ##      conditional write; every payment tool call is alwaysReview regardless of score.
+
+  toolAuthorization:
+    enabled: true
+    agentRoles:
+
+      ## AISP — read account data across institutions on behalf of customer.
+      ## No payment initiation. No beneficiary mutation.
+      ## GDPR data minimisation: only the fields declared at consent time.
+      - role: "account_aggregation"
+        allowedTools:
+          - "get_account_list"
+          - "get_balance"
+          - "get_transaction_history"
+          - "get_account_details"
+          - "get_standing_orders"      # read-only
+          - "get_direct_debits"        # read-only
+          - "get_scheduled_payments"   # read-only
+          - "search_institutions"
+          - "get_institution_details"
+        deniedTools:
+          - "initiate_payment"
+          - "create_standing_order"
+          - "delete_standing_order"
+          - "add_beneficiary"
+          - "delete_beneficiary"
+          - "update_account_details"
+          - "bash"
+          - "write_file"
+          - "database:write_*"
+          - "database:delete_*"
+
+      ## PISP — initiate payments from customer's account.
+      ## Payment initiation tools are subject to REVIEW threshold at admission layer.
+      ## Beneficiary changes are REVIEW-mandatory regardless of score.
+      - role: "payment_initiation"
+        allowedTools:
+          - "get_balance"
+          - "get_account_details"
+          - "get_beneficiary_list"
+          - "initiate_payment"           # REVIEW if above admissionThreshold
+          - "get_payment_status"
+          - "get_institution_details"
+        deniedTools:
+          - "get_transaction_history"    # not required for payment initiation; minimisation
+          - "add_beneficiary"            # beneficiary management is a separate regulated action
+          - "delete_beneficiary"
+          - "create_standing_order"
+          - "delete_standing_order"
+          - "bash"
+          - "write_file"
+          - "database:*"
+
+      ## Fraud analyst — read transactions and flag anomalies. No mutations.
+      ## The analyst agent reports; a human or compliance agent acts.
+      - role: "fraud_analyst"
+        allowedTools:
+          - "get_transaction_history"
+          - "get_account_list"
+          - "get_balance"
+          - "get_beneficiary_list"
+          - "get_scheduled_payments"
+          - "get_standing_orders"
+          - "flag_suspicious_transaction"  # write-once flag, no financial mutation
+          - "create_fraud_report"
+          - "search_institutions"
+        deniedTools:
+          - "initiate_payment"
+          - "add_beneficiary"
+          - "delete_beneficiary"
+          - "create_standing_order"
+          - "delete_standing_order"
+          - "bash"
+          - "database:write_*"
+          - "database:delete_*"
+
+      ## Escrow agent — holds funds pending condition verification; initiates release.
+      ## Every payment initiation is REVIEW-mandatory regardless of risk score.
+      ## Dual approval is required: both escrow parties must POST approve.
+      ## See admission.dualApprovalRoles above.
+      - role: "escrow_agent"
+        allowedTools:
+          - "get_balance"
+          - "get_account_details"
+          - "verify_escrow_condition"    # read/verify — no financial mutation
+          - "get_payment_status"
+          - "initiate_payment"           # conditional release — always routes to REVIEW
+          - "create_escrow_record"
+          - "update_escrow_status"
+        deniedTools:
+          - "get_transaction_history"
+          - "add_beneficiary"
+          - "delete_beneficiary"
+          - "create_standing_order"
+          - "bash"
+          - "database:delete_*"
+        alwaysReview:
+          - "initiate_payment"           # escrow releases bypass the risk score threshold
+
+      ## Compliance agent — reads audit trail, generates regulatory reports.
+      ## Read-only across all financial data. Writes only to compliance report store.
+      - role: "compliance_agent"
+        allowedTools:
+          - "get_transaction_history"
+          - "get_account_list"
+          - "get_account_details"
+          - "get_audit_trail"
+          - "get_policy_violations"
+          - "get_risk_scores"
+          - "generate_compliance_report" # DORA / PSD2 Article 96 report export
+          - "get_incident_log"
+        deniedTools:
+          - "initiate_payment"
+          - "add_beneficiary"
+          - "delete_beneficiary"
+          - "create_standing_order"
+          - "delete_standing_order"
+          - "bash"
+          - "database:write_*"
+          - "database:delete_*"
+
+    action: DENY
+
+  ## 4. DATA EXFILTRATION
+  ##    Allowlist is tight: regulated financial infrastructure only.
+  ##    No development tunnels, no paste sites, no unknown destinations.
+  ##    PSD2 requires data to stay within the EEA unless explicit consent;
+  ##    configure allowedDestinations to match your regulatory jurisdiction.
+
+  dataExfiltration:
+    enabled: true
+    allowedDestinations:
+      # Open banking API infrastructure
+      - "*.openbanking.org.uk"
+      - "api.truelayer.com"
+      - "ob.nordigen.com"            # GoCardless / Nordigen sandbox
+      - "sandbox.plaid.com"
+      # Payment rails
+      - "api.sepa.eu"
+      - "*.fasterpaymentsscheme.org.uk"
+      - "api.swift.com"
+      # Regulatory lookups
+      - "register.fca.org.uk"
+      - "register.dnb.nl"
+      - "*.bafin.de"
+      - "*.eba.europa.eu"
+      # Internal
+      - "*.internal"
+    blockedDestinations:
+      - "*.ngrok.io"
+      - "*.loca.lt"
+      - "*.serveo.net"
+      - "pastebin.com"
+      - "requestbin.*"
+      - "webhook.site"
+      - "pipedream.net"
+    blockUnknownDestinations: true   # explicit allowlist; unknown = block
+    action: DENY
+
+  ## 5. PARAMETER SANITIZATION — Financial Safety Net
+  ##    Mutations that prevent irreversible financial actions during validation.
+
+  parameterSanitization:
+    enabled: true
+    rules:
+      # Enforce idempotency keys on all payment initiations.
+      # Without idempotency, a retry after a timeout can double-pay.
+      - match: "initiate_payment"
+        requireField: "idempotency_key"
+        generateIfMissing: true        # generate UUID if absent rather than blocking
+
+      # Cap unreviewed payment amounts. Amounts above this threshold are
+      # routed to REVIEW regardless of risk score.
+      # Set to 0 to require REVIEW on all payments.
+      - match: "initiate_payment"
+        fieldRules:
+          amount:
+            maxValue: 500.00           # EUR; payments above €500 always escalate
+            currency: "EUR"            # override to match your operating currency
+
+      # Block round-number large amounts — classic fraud indicator.
+      # 10000, 9999, 5000 etc. are disproportionately common in fraud cases.
+      - match: "initiate_payment"
+        fieldRules:
+          amount:
+            blockRoundNumbers: true
+            roundNumberThreshold: 1000.00  # round numbers above this value trigger REVIEW
+
+      # Prevent standing order creation with immediate start date.
+      # A same-day standing order is unusual; escalate for human confirmation.
+      - match: "create_standing_order"
+        fieldRules:
+          firstPaymentDate:
+            blockSameDay: true
+            action: REVIEW
+
+  ## 6. LEAST PRIVILEGE
+  ##    File and database scoping for agents that have any local storage access.
+
+  leastPrivilege:
+    enabled: true
+    sqlInjection:
+      autoAppendWhereClause: true
+      userContextField: "session.consent_id"    # scope queries to the consented account set
+    fileOperations:
+      allowedBasePaths:
+        - "/workspace/reports"
+        - "/tmp/agent_scratch"
+      blockAbsolutePaths: true
+      blockPathTraversal: true
+
+  ## 7. SESSION BUDGET — Denial-of-Wallet + PSD2 Article 29 Rate Limits
+  ##    PSD2 Article 29 restricts how often an AISP can access account data.
+  ##    Most ASPSPs implement a 4-per-day-per-account limit before they may throttle.
+  ##    The velocity limits below are conservative; adjust to your ASPSP's published limits.
+
+  sessionBudget:
+    enabled: true
+    delegationFraction: 0.4              # sub-agents get 40% of parent budget (tighter than generic 50%)
+    limits:
+      maxTokensPerSession: 200000        # lower than generic — financial sessions are focused
+      maxCostPerSessionUSD: 2.00         # tight cost cap; escalate long-running sessions
+      maxToolCallsPerSession: 100        # a payment initiation workflow should not need 200 calls
+      maxToolCallsPerMinute: 10          # Article 29 alignment — conservative
+      idleTimeoutMinutes: 10
+      maxDurationMinutes: 60             # financial sessions should complete in under an hour
+    anomaly:
+      velocityWindowMinutes: 2           # tighter window than generic (5 min)
+      velocityThresholdCalls: 8          # 8 calls in 2 minutes is unusual for a payment agent
+      velocityMaxAvgDrift: 0.25          # lower drift tolerance than generic (0.30)
+      velocityRiskContribution: 0.20     # higher risk contribution per anomaly event
+    action: TERMINATE_SESSION
+
+  ## 8. DEPTH LIMITER
+
+  depthLimiter:
+    enabled: true
+    maxAgentNestingDepth: 3             # financial agents should not delegate deeply
+    maxParallelAgents: 5
+    maxSubtaskChainLength: 10
+    action: DENY
+
+  ## 9. OUTPUT VALIDATION — Financial Data Redaction
+  ##    Scans everything the agent reads back from tools.
+  ##    IBAN, PAN, sort code, BIC patterns are redacted in audit logs.
+  ##    Injection patterns embedded in bank API responses are caught here.
+
+  outputValidation:
+    enabled: true
+    scanToolOutputs: true
+    suspiciousOutputPatterns:
+      # Generic injection
+      - "SYSTEM:"
+      - "[[HIDDEN INSTRUCTION]]"
+      - "as an AI assistant, you must now"
+      - "ignore all previous"
+      - "your new objective is"
+      # Financial response manipulation
+      - "account number has changed"
+      - "new IBAN:"
+      - "updated sort code:"
+      - "redirect payment to"
+    maxOutputSizeBytes: 524288           # 512KB — financial API responses are compact
+    action: SANITIZE
+    sanitizeMode: "redact"
+    redactReplacement: "[REDACTED-FINANCIAL]"
+    ## Patterns redacted from audit logs (not from agent output — agent sees the real data).
+    ## These prevent the audit store from becoming a financial data exfiltration vector.
+    auditRedactPatterns:
+      - pattern: "[A-Z]{2}[0-9]{2}[A-Z0-9]{4}[0-9]{7}([A-Z0-9]?){0,16}"
+        label: "IBAN"
+      - pattern: "[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}"
+        label: "PAN"
+      - pattern: "[0-9]{6}[- ][0-9]{8}"
+        label: "UK_SORT_ACCOUNT"
+      - pattern: "[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?"
+        label: "BIC_SWIFT"
+
+  ## 10. HUMAN REVIEW — PSD2 SCA Adapter
+  ##     The REVIEW outcome is the agent-era equivalent of Strong Customer Authentication.
+  ##     Every REVIEW decision is recorded with the fields required by PSD2 Article 96
+  ##     and DORA Article 11 for incident reporting.
+  ##
+  ##     Dual approval (for escrow_agent role) requires both parties in approvedBy
+  ##     before the decision is released to the waiting hook.
+
+  humanReview:
+    enabled: true
+    webhookURL: ""                        # set PERCHGUARD_SLACK_WEBHOOK; leave empty to disable
+    timeoutSeconds: 120                   # 2 minutes — account holders may not be at keyboard
+    autoDenyOnTimeout: true
+    ## PSD2 regulatory audit fields appended to every REVIEW record in SQLite.
+    regulatoryAuditFields:
+      - "consent_id"                      # the PSD2 consent object this session is operating under
+      - "psu_ip_address"                  # PSU (Payment Service User) IP — required for PSD2 Article 97
+      - "psu_device_id"
+      - "aspsp_id"                        # which bank's API this session targets
+      - "tpp_id"                          # the licensed TPP operating this agent
+    ## Notification template for Slack / dashboard.
+    ## Variables: {tool}, {amount}, {currency}, {beneficiary}, {session_id}, {risk_score}, {reason}
+    notificationTemplate: |
+      *PerchGuard — Payment Review Required*
+      Tool: `{tool}`
+      Amount: {amount} {currency}
+      Beneficiary: {beneficiary}
+      Session: {session_id}
+      Risk score: {risk_score}
+      Reason: {reason}
+
+  ## 11. AGENT FLEET — Open Banking Behavior Patterns
+  ##     Named fraud sequences specific to the open banking threat model.
+  ##     These extend the generic recon→exploit→exfiltrate detection
+  ##     with patterns observed in real open banking fraud cases.
+
+  agentFleet:
+    enabled: true
+    driftThreshold: 0.45                  # tighter than generic (0.60)
+    behaviorWindowSize: 8                 # lookback window for sequence detection
+    attackChainEnabled: true
+    behaviorPatterns:
+      ## Account takeover reconnaissance: sweep all balances → initiate large transfer.
+      - name: "balance_sweep_transfer"
+        sequence: ["get_balance", "get_balance", "get_balance", "initiate_payment"]
+        description: "Multiple balance checks followed by payment initiation — ATO pattern"
+        riskContribution: 0.35
+
+      ## Beneficiary seeding: add new beneficiary → immediately initiate payment.
+      ## Legitimate flows add a beneficiary, wait, then pay (cooling-off period).
+      - name: "beneficiary_seed_immediate_payment"
+        sequence: ["add_beneficiary", "initiate_payment"]
+        description: "New beneficiary added immediately before payment — no cooling-off period"
+        riskContribution: 0.50
+
+      ## Standing order hijack: read existing orders → delete → create with new details.
+      - name: "standing_order_hijack"
+        sequence: ["get_standing_orders", "delete_standing_order", "create_standing_order"]
+        description: "Standing order deleted and recreated — potential mandate hijack"
+        riskContribution: 0.60
+
+      ## High-frequency balance polling: timing attack — agent watching for a deposit.
+      ## More than 4 get_balance calls within the behavior window is anomalous.
+      - name: "balance_timing_probe"
+        sequence: ["get_balance", "get_balance", "get_balance", "get_balance"]
+        description: "Repeated balance polling — possible timing attack before transfer"
+        riskContribution: 0.30
+
+  ## 12. AUDIT
+  ##     Structured for DORA Article 11 and PSD2 Article 96 compliance.
+  ##     Financial identifiers (IBAN, PAN, sort code) are redacted in the audit log
+  ##     by the outputValidation.auditRedactPatterns rules above.
+  ##     The audit store is the evidence trail for regulatory inspection.
+
+  audit:
+    enabled: true
+    logLevel: "info"
+    logAllDecisions: true
+    logToolParameters: true
+    redactedFields:
+      - "password"
+      - "secret"
+      - "api_key"
+      - "token"
+      - "authorization"
+      - "client_secret"              # OAuth client credentials
+      - "access_token"               # FAPI access tokens — must not appear in logs
+      - "refresh_token"
+      - "psu_password"               # PSU authentication credentials
+    exporters:
+      - type: "stdout"
+      # - type: "otlp"
+      #   endpoint: "http://otel-collector:4318"
+      ## Loki: structured event push per decision.
+      ## Labels: session, tool, decision, reason, tpp_id, aspsp_id
+      # - type: "loki"
+      #   endpoint: "http://localhost:3100"

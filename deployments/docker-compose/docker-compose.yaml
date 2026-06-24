@@ -1,0 +1,132 @@
+version: "3.9"
+
+# PerchGuard — local dev stack
+#
+# Services:
+#   perchguard              — the admission controller (HTTP :8080)
+#   insurance-mcp-server    — real MCP tool server (JSON-RPC HTTP :8090)
+#   insurance-agent-python  — Python Claude agent with explicit governance (runs once, exits)
+#   mock-agent              — scripted harness for pipeline smoke-testing
+#   jaeger                  — OTEL traces UI at http://localhost:16686
+#
+# Usage (run from repo root):
+#   docker compose -f deployments/docker-compose/docker-compose.yaml up --build
+#   Secrets: copy .env.example to .env at repo root and fill in ANTHROPIC_API_KEY_USED_BY_PERCHGUARD and ANTHROPIC_API_KEY_USED_BY_RED_TEAM
+
+services:
+  perchguard:
+    build:
+      context: ../..       # repo root — picks up Dockerfile + configs/
+      dockerfile: Dockerfile
+    env_file:
+      - ../../.env
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    environment:
+      PERCHGUARD_POLICY: /etc/perchguard/policies.yaml
+      PERCHGUARD_ADDR: ":8080"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      PERCHGUARD_LLM_API_KEY: "${ANTHROPIC_API_KEY_USED_BY_PERCHGUARD}"
+      # Healthcare lab: activate /mcp transparent proxy endpoint.
+      # Set PERCHGUARD_MCP_UPSTREAM to the upstream MCP server URL.
+      # The AGENT_ROLE here is the default; the healthcare agent container
+      # passes per-task role via the session (see healthcare-agent-python tasks.py).
+      PERCHGUARD_MCP_UPSTREAM: "http://healthcare-mcp-server:8091"
+      PERCHGUARD_AGENT_ROLE: "${PERCHGUARD_AGENT_ROLE:-clinician}"
+    volumes:
+      # Hot-reload policies without rebuilding the image
+      - ../../configs:/etc/perchguard:ro
+      # Expose audit.jsonl + governance.json to the host for observe.py / tail -f
+      - ../../snapshots:/app/snapshots
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      jaeger:
+        condition: service_started
+
+  mock-agent:
+    build:
+      context: mock-agent/
+    environment:
+      PERCHGUARD_URL: "http://perchguard:8080"
+    depends_on:
+      perchguard:
+        condition: service_healthy
+    restart: "no"          # runs once, exits — check logs for results
+
+  insurance-mcp-server:
+    build:
+      context: ../insurance-mcp-server
+    ports:
+      - "8090:8090"          # exposed to host for manual curl testing
+    environment:
+      MCP_ADDR: ":8090"
+    restart: unless-stopped
+
+  insurance-agent-python:
+    build:
+      context: ../insurance-agent-python
+    env_file:
+      - ../../.env           # provides ANTHROPIC_API_KEY_USED_BY_PERCHGUARD
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY_USED_BY_PERCHGUARD}"
+      PERCHGUARD_URL: "http://perchguard:8080"
+      MCP_URL: "http://insurance-mcp-server:8090"
+      CLAUDE_MODEL: "claude-haiku-4-5-20251001"
+    depends_on:
+      perchguard:
+        condition: service_healthy
+      insurance-mcp-server:
+        condition: service_started
+    restart: "no"            # runs all 4 tasks, exits — check logs for governance decisions
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    ports:
+      - "16686:16686"   # UI
+      - "4318:4318"     # OTLP HTTP ingest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  # ── Healthcare Lab (Phase 3 validation) ───────────────────────────────────
+  # Architecture: agent → PerchGuard /mcp (transparent proxy) → healthcare-mcp-server
+  # Run a single scenario:
+  #   docker compose ... run -e TASK=poisoned_patient_note -e AGENT_ROLE=clinician healthcare-agent-python
+  # Run all scenarios sequentially (no TASK env = run all):
+  #   docker compose ... up healthcare-agent-python
+  #
+  # Governance decisions appear in perchguard container logs, not agent logs.
+
+  healthcare-mcp-server:
+    build:
+      context: ../healthcare-mcp-server
+    ports:
+      - "8091:8091"          # exposed to host for manual curl testing
+    environment:
+      MCP_ADDR: ":8091"
+    restart: unless-stopped
+
+  healthcare-agent-python:
+    build:
+      context: ../healthcare-agent-python
+    env_file:
+      - ../../.env           # provides ANTHROPIC_API_KEY_USED_BY_PERCHGUARD
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY_USED_BY_PERCHGUARD}"
+      # Agent points to PerchGuard /mcp — transparent proxy, not the real MCP server
+      PERCHGUARD_MCP_URL: "http://perchguard:8080"
+      CLAUDE_MODEL: "claude-haiku-4-5-20251001"
+      # TASK: run a single scenario by name (leave unset to run all five)
+      # e.g. TASK=poisoned_patient_note
+    depends_on:
+      perchguard:
+        condition: service_healthy
+      healthcare-mcp-server:
+        condition: service_started
+    restart: "no"            # runs scenarios and exits — check logs for governance decisions
+

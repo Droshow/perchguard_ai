@@ -1,0 +1,46 @@
+## PerchGuard Red Team overlay — Phase 5 Gap 2
+##
+## Rewires PerchGuard's MCP upstream to insurance-mcp-server and adds
+## the redteam-mcp-agent service. The agent speaks MCP JSON-RPC to
+## PerchGuard's /mcp endpoint — PerchGuard governs transparently.
+##
+## Usage (from repo root):
+##   docker compose \
+##     -f deployments/docker-compose/docker-compose.yaml \
+##     -f deployments/docker-compose/docker-compose.redteam.yaml \
+##     up --build redteam-mcp-agent
+##
+## Run a single scenario:
+##   docker compose ... run -e TASK=mission_drift redteam-mcp-agent
+##
+## Defender monitor (separate terminal):
+##   watch -n5 'curl -s -H "Authorization: Bearer $PERCHGUARD_API_KEY" \
+##     http://localhost:8080/api/fleet/summary | jq'
+##
+## Forensic record: ./snapshots/audit.jsonl (appended in real time)
+
+services:
+  perchguard:
+    environment:
+      # Point PerchGuard's MCP proxy at the insurance MCP server for red team runs.
+      # Overrides the default healthcare upstream set in docker-compose.yaml.
+      PERCHGUARD_MCP_UPSTREAM: "http://insurance-mcp-server:8090"
+      PERCHGUARD_AGENT_ROLE: "read_only_agent"
+
+  redteam-mcp-agent:
+    build:
+      context: ../redteam-mcp-agent
+    env_file:
+      - ../../.env
+    environment:
+      # Use the dedicated red team key — keeps rate limits and billing separate from governance.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY_USED_BY_RED_TEAM}"
+      PERCHGUARD_MCP_URL: "http://perchguard:8080"
+      CLAUDE_MODEL: "claude-sonnet-4-6"
+      # Set TASK to run a single scenario: mission_drift | tool_escalation | output_injection | multi_call_recon
+    depends_on:
+      perchguard:
+        condition: service_healthy
+      insurance-mcp-server:
+        condition: service_started
+    restart: "no"

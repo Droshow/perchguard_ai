@@ -1,0 +1,44 @@
+# ValidatingWebhookConfiguration — Phase 2
+#
+# This registers PerchGuard as a K8s admission webhook so that
+# kubectl apply / agent-created pods are intercepted automatically.
+#
+# Prerequisites (Phase 2):
+#   1. TLS cert for perchguard.perchguard.svc
+#      kubectl create secret tls perchguard-tls \
+#        --cert=tls.crt --key=tls.key -n perchguard
+#   2. CA bundle for the webhook config (base64 of CA cert)
+#   3. Deploy with HTTPS (:8443) enabled
+#
+# Apply:
+#   kubectl apply -f webhook-config.yaml
+#
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: perchguard
+  annotations:
+    perchguard/phase: "2"
+    perchguard/status: "pending-tls"
+webhooks:
+  - name: intercept.perchguard.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Ignore         # Ignore = fail open (safe default during dev)
+    clientConfig:
+      service:
+        name: perchguard
+        namespace: perchguard
+        path: /intercept
+        port: 8443
+      caBundle: "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUZoakNDQTI2Z0F3SUJBZ0lVZmxsc3REOTFsUy8wM3lGMndOM21LMCtFd0hzd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0pERWlNQ0FHQTFVRUF3d1pjR1Z5WTJobmRXRnlaQzV3WlhKamFHZDFZWEprTG5OMll6QWVGdzB5TmpBMApNRGN4TlRJMU5UWmFGdzB6TmpBME1EUXhOVEkxTlRaYU1DUXhJakFnQmdOVkJBTU1HWEJsY21Ob1ozVmhjbVF1CmNHVnlZMmhuZFdGeVpDNXpkbU13Z2dJaU1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQ0R3QXdnZ0lLQW9JQ0FRQ1oKRUVHVWhEZi80VzZ5NGFkR1hGdTUxTkNtVXBPTFBXVkRvUXdXdjBGT0hoNUdVQ2kyY2RMQVdEUmVKajVFYkJmMgprTzdOUFZHalpJcHo2emkxS1BzaWFsQThqcTgwbHU1Q3V2SEhqUk5sQzMxcTBWb0YzdXhpbEtJQ0g5eEhHK1M5CmJlMXNoRWQ3V1FKdWJQL2grMFIvQTZDRTZTUTR6djZQOUZLV0lQZjNUNHNDZmFQUTM0dHJUR004SjVqbi9WWVoKRFBYSmMzbTlXNEhaT2R3d0FUcmxkWCtKVGIyTk5XcVVzRlJ3ZW9mUld1Uk1qUTBnampFaURmaVpqZDROTTFZcApWVVdEZ1AwckgrZmx2R1pyM2hqdlNOZjF2eUdDZHZCWnc5Z0pqam1YSm1HREpKMHNtTHIxTEY1ZWd2L0pGV1NnCit3WGNkVllTVnB2UWpCd1BaWERnY05GZkhLSkF0V2hNdlJwYzQzOTJJR3MxcUdwMEhnWS9LTmsxSGF2aVllclkKSHVHZHhSandMYzQ5dXdLeEJwUm9vWEV2UkwySGV4djlxeW1RS2FZZ3RndWVSZDhxTEM1Z2ZXVDdQR1VjcG8yUwpTdFhPTHBuNHkzc1kvWmRVQVVFL0Rnd1ErVHdtMDBDN1g2Q2hRUFZaY0lCYXZmZ29NWk1ydkNZbEN4L25jZWYxCnFnVmhNZFlPajlTalA4dzRPVWRNL2V5K0NVL2hYY3hhck01dVEyZkVtWVZkSHhOd3RkeksxWTlaNlNieTNEblMKdmpyZWJKNnRZZkJteXpiU2tVeGJqaFBTcmtvYldRUWw3a3RhZERjL1ozSjczd08ycEVOamxzdnB4WmNIdEpoVQprSlZNRjVVTFpYM1J5Vzd4OHBGejZacFBqTjZKM3hxb2crbVFxYnBEdXdJREFRQUJvNEd2TUlHc01CMEdBMVVkCkRnUVdCQlFLRFRDRk1wRkNSc3FaK0NITG4wV3RtSTBFYmpBZkJnTlZIU01FR0RBV2dCUUtEVENGTXBGQ1JzcVoKK0NITG4wV3RtSTBFYmpBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUZrR0ExVWRFUVJTTUZDQ0dYQmxjbU5vWjNWaApjbVF1Y0dWeVkyaG5kV0Z5WkM1emRtT0NKM0JsY21Ob1ozVmhjbVF1Y0dWeVkyaG5kV0Z5WkM1emRtTXVZMngxCmMzUmxjaTVzYjJOaGJJSUtjR1Z5WTJobmRXRnlaREFOQmdrcWhraUc5dzBCQVFzRkFBT0NBZ0VBV0Z1bVF5amIKMng0NzBFSEJzQ3Mya0lUR2V5UjFDb3dvQ1NMYzQzY0dNM1FnK3FmdnJxR1BwZ1BjeGNvcHcrTTFLSkE1Ukp5MwpkWkJJQWkyVDlwYWIvdTNNRXFjS3habEcvd2Zpd2Q3NEVrT3ppSGxLY0VvNnpYNkhwYjNRWW53N1RIakYzaC9WCkNRNFdneFp4TmpDWXp1YlNzRWU2d21UQUtPSm54OHA5SzJDWTlITTNPY1pjRDJBNm1OeTV4d0J3ZjNoV3pxOGIKeU9ydys0L1A2eXg0bTZDYVhvTmtXK00yZXNkY1UyQTB0bFJ2amwxK1BGeGZPTFE3MDdoQ2dXNFVBSkpUdUJsTgpyNXZadmgyU3QxWFFiYVp5ZXl6aEhZaE8yRVJIRzRudnVRdWRMMGUvZnlxdEovWkhQRVlXMGh1eHVzY29yMEVPClVYVm9JcXJOQkNKZFJrMmJpVE9jR1Y3bHg0Y1BFNVRwMlMyQTUzTi9VRXZ2M3NueVp1UmtoWi9CenVTZmN2OXMKd3dRRzkyNktlU3orMkQ1eTBXL2hLMVRhNUs0Slora2c1Z0hDZ2g2UG1KbXpMdTEvbDBoTjk1RzgwRWtDVFhGSAp1ZUM2bWtMeEV5cU1SN0pzaEVkTEFLRDVNeFMxZ2JBWUY2NWUxWjA4WnpmYUd0VjhUbWEwYWJFWktLd2IxVytTCm1FUUlCMU94WDlocVpJYXQvRGM0aVdWUkp0dC9ZSEk2eDBQUndxOVYvVkl5WGtZQ1FWc0hqVWRvMVBRcjN4K2sKN2F0bkJoNjdhbVNyRy8wQ0krc1plZzkvQndLTUwxV3B4b2ZsS2FYN0RlZjlqMUJlQ2V1LzhKYTg0cEN0SHlzOQpoRmtxM0xPK2Nyb2xlaHVaSmFzTmw2RDRvTTJYSTdzQnd4QT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo="
+    rules:
+      - apiGroups:   [""]
+        apiVersions: ["v1"]
+        operations:  ["CREATE", "UPDATE"]
+        resources:   ["pods"]
+        scope:       "Namespaced"
+    namespaceSelector:
+      matchLabels:
+        perchguard/intercept: "true"   # opt-in per namespace

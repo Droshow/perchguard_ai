@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: perchguard
+  namespace: perchguard
+  labels:
+    app.kubernetes.io/name: perchguard
+spec:
+  selector:
+    app: perchguard
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: https
+      port: 8443
+      targetPort: 8443
+  type: ClusterIP
+---
+# NodePort for local K3s development — exposes :30080 on the host.
+# Remove in production; use ClusterIP only with the webhook config.
+apiVersion: v1
+kind: Service
+metadata:
+  name: perchguard-nodeport
+  namespace: perchguard
+  labels:
+    app.kubernetes.io/name: perchguard
+    app.kubernetes.io/component: dev-access
+spec:
+  selector:
+    app: perchguard
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080
+  type: NodePort

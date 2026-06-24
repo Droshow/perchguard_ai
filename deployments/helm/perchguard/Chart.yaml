@@ -1,0 +1,16 @@
+apiVersion: v2
+name: perchguard
+description: Agentic admission controller — policy enforcement for AI agent tool calls
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - ai-governance
+  - admission-controller
+  - llm-security
+  - agent-security
+home: https://github.com/perchguard/PerchGuard_AI
+sources:
+  - https://github.com/perchguard/PerchGuard_AI
+maintainers:
+  - name: PerchGuard

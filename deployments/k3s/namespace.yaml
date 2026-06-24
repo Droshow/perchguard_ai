@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: perchguard
+  labels:
+    app.kubernetes.io/name: perchguard
+    app.kubernetes.io/component: admission-controller

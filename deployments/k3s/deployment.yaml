@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perchguard
+  namespace: perchguard
+  labels:
+    app.kubernetes.io/name: perchguard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perchguard
+  template:
+    metadata:
+      labels:
+        app: perchguard
+        app.kubernetes.io/name: perchguard
+    spec:
+      serviceAccountName: perchguard
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534      # nobody
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: perchguard
+          image: perchguard:latest
+          imagePullPolicy: IfNotPresent  # use local image in K3s dev
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: https
+              containerPort: 8443
+          env:
+            - name: PERCHGUARD_POLICY
+              value: /etc/perchguard/policies.yaml
+            - name: PERCHGUARD_ADDR
+              value: ":8443"
+            - name: PERCHGUARD_TLS_CERT
+              value: /tls/tls.crt
+            - name: PERCHGUARD_TLS_KEY
+              value: /tls/tls.key
+            - name: PERCHGUARD_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: perchguard-llm
+                  key: api-key
+                  optional: true
+          volumeMounts:
+            - name: policies
+              mountPath: /etc/perchguard
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: policies
+          configMap:
+            name: perchguard-policies
+        - name: tls
+          secret:
+            secretName: perchguard-tls

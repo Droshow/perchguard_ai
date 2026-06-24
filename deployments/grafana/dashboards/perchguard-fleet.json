@@ -1,0 +1,164 @@
+{
+  "__inputs": [],
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0"},
+    {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+    {"type": "datasource", "id": "loki", "name": "Loki", "version": "1.0.0"}
+  ],
+  "annotations": {"list": []},
+  "description": "PerchGuard — agentic admission controller fleet dashboard",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active Sessions",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "targets": [{"datasource": "Prometheus", "expr": "perchguard_active_sessions", "legendFormat": "sessions"}]
+    },
+    {
+      "id": 2,
+      "title": "Pending Reviews",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background",
+        "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}},
+      "targets": [{"datasource": "Prometheus", "expr": "perchguard_pending_reviews", "legendFormat": "pending"}]
+    },
+    {
+      "id": 3,
+      "title": "Block Rate (5m)",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "unit": "percentunit"},
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum(rate(perchguard_decisions_total{decision=\"DENY\"}[5m])) / sum(rate(perchguard_decisions_total[5m]))",
+        "legendFormat": "block rate"
+      }]
+    },
+    {
+      "id": 4,
+      "title": "Hook Latency p99",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "unit": "s"},
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "histogram_quantile(0.99, sum(rate(perchguard_hook_duration_seconds_bucket[5m])) by (le))",
+        "legendFormat": "p99"
+      }]
+    },
+    {
+      "id": 5,
+      "title": "Decisions Over Time",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 4},
+      "options": {"tooltip": {"mode": "multi"}},
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (decision) (rate(perchguard_decisions_total[2m]))",
+        "legendFormat": "{{decision}}"
+      }]
+    },
+    {
+      "id": 6,
+      "title": "Session Risk Scores",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 4},
+      "fieldConfig": {
+        "defaults": {"min": 0, "max": 1,
+          "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.5}, {"color": "red", "value": 0.75}]}}
+      },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "perchguard_risk_score",
+        "legendFormat": "{{session_id}}"
+      }]
+    },
+    {
+      "id": 7,
+      "title": "Top Blocked Tools",
+      "type": "bargauge",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 12},
+      "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["sum"]}},
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "topk(10, sum by (tool) (perchguard_blocked_tools_total))",
+        "legendFormat": "{{tool}}"
+      }]
+    },
+    {
+      "id": 8,
+      "title": "Policy Violations",
+      "type": "bargauge",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 12},
+      "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["sum"]}},
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "topk(10, sum by (policy_name) (perchguard_policy_violations_total))",
+        "legendFormat": "{{policy_name}}"
+      }]
+    },
+    {
+      "id": 9,
+      "title": "Block Feed",
+      "type": "logs",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12},
+      "targets": [{
+        "datasource": "Loki",
+        "expr": "{job=\"perchguard\",decision=~\"DENY|TERMINATE\"}",
+        "legendFormat": ""
+      }]
+    },
+    {
+      "id": 10,
+      "title": "Hook Latency Histogram",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 20},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.50, sum(rate(perchguard_hook_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum(rate(perchguard_hook_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum(rate(perchguard_hook_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 11,
+      "title": "Policy Reload Events",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 20},
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "increase(perchguard_policy_reload_total[10m])",
+        "legendFormat": "reloads"
+      }]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["perchguard", "agents", "admission"],
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "PerchGuard — Fleet Dashboard",
+  "uid": "perchguard-fleet",
+  "version": 1
+}

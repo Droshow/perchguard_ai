@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: perchguard
+  namespace: perchguard
+  labels:
+    app.kubernetes.io/name: perchguard
+
+---
+# Namespaced Role — policy config and TLS secrets within the perchguard namespace.
+# get+list+watch is the standard trio; list alone without get is useless,
+# watch without list means the initial LIST call on startup fails.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: perchguard
+  namespace: perchguard
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["perchguard-policies"]
+    verbs: ["get", "list", "watch"]
+
+  # TLS cert — needed from Phase 2 onward.
+  # Scoped to a single named secret so the pod can't read arbitrary secrets.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["perchguard-tls"]
+    verbs: ["get", "list", "watch"]
+
+  # Publish admission decisions as K8s Events (useful in lab — shows in kubectl get events).
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: perchguard
+  namespace: perchguard
+subjects:
+  - kind: ServiceAccount
+    name: perchguard
+    namespace: perchguard
+roleRef:
+  kind: Role
+  name: perchguard
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole — needed to register/read the ValidatingWebhookConfiguration.
+# admissionregistration.k8s.io is cluster-scoped; can't be done with a namespaced Role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: perchguard-webhook
+  labels:
+    app.kubernetes.io/name: perchguard
+rules:
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    resourceNames: ["perchguard"]
+    verbs: ["get", "list", "watch"]
+
+  # Lab only: allow reading pod/namespace metadata for richer admission context.
+  # Remove in production — add only the fields the SemanticFirewall actually needs.
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: perchguard-webhook
+subjects:
+  - kind: ServiceAccount
+    name: perchguard
+    namespace: perchguard
+roleRef:
+  kind: ClusterRole
+  name: perchguard-webhook
+  apiGroup: rbac.authorization.k8s.io

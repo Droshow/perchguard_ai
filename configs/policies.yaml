@@ -1,0 +1,334 @@
+## PerchGuard - Agentic Admission Policies
+## Analogous to security-policies.yaml in Dynamic_Pod_Sec,
+## but governing AGENT TOOL CALLS instead of Pod specs.
+
+## Top-level enforcement mode.
+## "observe" — full pipeline runs; decisions are logged but all responses are ALLOW.
+##             Start here. Read audit.jsonl for a week, then flip to "enforce".
+## "enforce" — normal blocking behaviour.
+enforcement: enforce
+
+policies:
+
+  ## 1. VALIDATION LAYER - "The No-Go Zone"
+  ##    Mirrors: context_capabilities, api_restrictions, image_security
+
+  promptInjection:
+    enabled: true
+    # Patterns that indicate indirect prompt injection attempts
+    suspiciousPatterns:
+      - "ignore previous instructions"
+      - "disregard your system prompt"
+      - "you are now"
+      - "pretend you are"
+      - "your new instructions"
+      - "<!-- inject"
+      - "[SYSTEM OVERRIDE]"
+    # Scan these fields for injection patterns
+    scanFields:
+      - user_intent          # primary attack vector: malicious user input
+      - tool_parameters      # injections embedded in tool arguments
+      - tool_output          # outbound admission: scan what agents read back
+    action: DENY
+
+  semanticFirewall:
+    enabled: true
+    intentAlignmentThreshold: 0.6
+    action: HUMAN_REVIEW
+    llm:
+      model: "claude-sonnet-4-6"
+      maxTokens: 300
+      temperature: 0.0
+      budgetMs: 10000
+      skipIfNoIntent: true
+
+  toolAuthorization:
+    enabled: true
+    # Allow/deny lists per agent role
+    # Wildcards supported: "bash:*" means all bash subcommands
+    agentRoles:
+      - role: "read_only_agent"
+        allowedTools:
+          - "read_file"
+          - "list_directory"
+          - "web_search"
+          - "bash:git status"
+          - "bash:git log"
+          - "read_policy"
+          - "search_claims"
+        deniedTools:
+          - "bash"             # bare bash - too broad
+          - "write_file"
+          - "delete_file"
+          - "database:*"
+          - "write_report"
+          - "run_sql"
+          - "send_notification"
+      - role: "developer_agent"
+        allowedTools:
+          - "read_file"
+          - "write_file"
+          - "bash"
+          - "list_directory"
+          - "web_search"
+          - "read_policy"
+          - "search_claims"
+          - "write_report"
+          - "run_sql"
+          - "send_notification"
+        deniedTools:
+          - "bash:rm -rf"
+          - "bash:*--force*"
+          - "database:drop_*"
+          - "cloud:iam:*"
+
+      # ── Healthcare roles ──────────────────────────────────────────────
+      # Three-tier hierarchy: clinician > nurse > billing_agent
+      # Models HIPAA minimum-necessary access: each role sees only what
+      # they need, explicit deny wins over allow.
+
+      - role: "clinician"
+        allowedTools:
+          - "get_patient_record"
+          - "get_lab_results"
+          - "write_care_plan"
+          - "send_referral"
+          - "update_medication"
+        deniedTools:
+          - "get_billing_info"     # billing separation — clinicians don't see cost data
+
+      - role: "nurse"
+        allowedTools:
+          - "get_patient_record"
+          - "get_lab_results"
+        deniedTools:
+          - "write_care_plan"      # clinician-only action
+          - "update_medication"    # clinician-only action
+          - "send_referral"        # clinician-only action
+          - "get_billing_info"     # billing separation
+
+      - role: "billing_agent"
+        allowedTools:
+          - "get_billing_info"
+          - "get_patient_record"   # minimum necessary: name/DOB only (no clinical notes)
+        deniedTools:
+          - "get_lab_results"      # clinical data — not billing-relevant
+          - "write_care_plan"
+          - "update_medication"
+          - "send_referral"
+    action: DENY
+
+  dataExfiltration:
+    enabled: true
+    # Block outbound tool calls to unknown/untrusted destinations
+    # Mirrors: network_security/check_egress.go
+    allowedDestinations:
+      - "*.internal"
+      - "api.github.com"
+      - "registry.npmjs.org"
+      - "localhost"            # allow loopback — blocks on localhost:* were blocking Prometheus scrapes
+      - "127.0.0.1"           # explicit IPv4 loopback
+      # Healthcare: approved NHS/FHIR destinations for referrals and records exchange
+      - "*.nhs.uk"
+      - "hl7.org"
+      - "fhir.org"
+    blockedDestinations:
+      - "*.ngrok.io"           # common exfil channel
+      - "pastebin.com"
+      - "requestbin.*"
+      - "external-research.io" # PHI exfiltration scenario — explicitly blocked
+    blockUnknownDestinations: true
+    action: DENY
+
+  ## 2. MUTATION LAYER - "The Safety Net"
+  ##    Mirrors: mutatePod() / applyBaselineSecurity() in webhook.go
+
+  parameterSanitization:
+    enabled: true
+    rules:
+      # Inject --dry-run for destructive shell commands
+      - match: "bash"
+        containsAny: ["rm ", "drop ", "delete ", "truncate "]
+        inject: "--dry-run"
+        unless: "dry_run_confirmed=true"   # session flag override
+      # Inject --dry-run for destructive SQL (run_sql tool uses "query" param)
+      - match: "run_sql"
+        containsAny: ["drop ", "delete ", "truncate ", "alter "]
+        inject: "--dry-run"
+        unless: "dry_run_confirmed=true"
+      # Strip dangerous flags
+      - match: "bash"
+        stripFlags:
+          - "-rf"
+          - "--force"
+          - "--no-verify"
+          - "--skip-hooks"
+      # Force read-only for file access tools when not in write role
+      - match: "read_file"
+        enforceReadOnly: true
+
+  leastPrivilege:
+    enabled: true
+    # Automatically scope SQL to current user's context
+    sqlInjection:
+      autoAppendWhereClause: true
+      userContextField: "session.user_id"
+    # Scope file operations to allowed directories
+    fileOperations:
+      allowedBasePaths:
+        - "/workspace"
+        - "/tmp/agent_scratch"
+      blockAbsolutePaths: true
+      blockPathTraversal: true   # blocks "../../../etc/passwd"
+
+  ## 3. RESOURCE QUOTA LAYER - "Preventing Agentic Sprawl"
+  ##    Mirrors: resource_limits/ in Dynamic_Pod_Sec
+
+  sessionBudget:
+    enabled: true
+    delegationFraction: 0.5            # child sub-agent gets 50% of parent's maxToolCallsPerSession
+    # "Denial-of-wallet" protection
+    limits:
+      maxTokensPerSession: 500000        # ~$1.50 at current Claude pricing
+      maxCostPerSessionUSD: 5.00
+      maxToolCallsPerSession: 200
+      maxToolCallsPerMinute: 30
+      idleTimeoutMinutes: 15             # evict session if no tool call arrives in 15 min
+      maxDurationMinutes: 120            # hard cap: evict any session older than 2 hours
+    anomaly:
+      velocityWindowMinutes: 5           # lookback window for probe detection
+      velocityThresholdCalls: 20         # calls in window before anomaly fires
+      velocityMaxAvgDrift: 0.3           # avg drift below this = repetitive (low diversity)
+      velocityRiskContribution: 0.15     # risk added to accumulator when triggered (once per window)
+    action: TERMINATE_SESSION
+
+  depthLimiter:
+    enabled: true
+    # Prevent "Agent-calling-Agent" recursion spirals
+    # Mirrors: K8s concept of preventing runaway containers
+    maxAgentNestingDepth: 5
+    maxParallelAgents: 10
+    maxSubtaskChainLength: 20
+    action: DENY
+
+  ## 4. OUTBOUND ADMISSION - Novel layer, no K8s equivalent
+  ##    Validates what the agent READS BACK from tools (not just what it sends)
+
+  outputValidation:
+    enabled: true
+    scanToolOutputs: true
+    suspiciousOutputPatterns:
+      - "SYSTEM:"
+      - "[[HIDDEN INSTRUCTION]]"
+      - "as an AI assistant, you must now"
+      - "ignore all previous"
+      - "your new objective is"
+    maxOutputSizeBytes: 1048576
+    action: SANITIZE
+    sanitizeMode: "redact"
+    redactReplacement: "[REDACTED]"
+
+  ## 4b. PII / BIOMETRIC CONTENT - content-based detection independent of
+  ##     audit.redactedFields (which matches by parameter name, not content).
+  ##     Catches PII/biometric data regardless of how a tool names its fields.
+  piiBiometric:
+    enabled: true
+    patterns:
+      - "\\b\\d{3}-\\d{2}-\\d{4}\\b" # SSN: 123-45-6789
+    biometricKeySuffixes:
+      - "_embedding"
+      - "_template"
+      - "voiceprint"
+      - "faceprint"
+    redactReplacement: "[REDACTED:PII]"
+
+  humanReview:
+    enabled: true
+    webhookURL: ""
+    timeoutSeconds: 60
+    autoDenyOnTimeout: true
+
+  ## 6. AGENT FLEET - Phase 3: session-aware reasoning layer
+  ##    Stateful validator that tracks intent drift and attack chains across
+  ##    multiple tool calls within a single agent session.
+
+  agentFleet:
+    enabled: true                  # Phase 3 active
+    driftThreshold: 0.6            # cosine drift above this adds to session risk
+    behaviorWindowSize: 10         # recent events scanned for attack chain patterns
+    attackChainEnabled: true       # detect recon→exploit→exfiltrate sequences
+    # behaviorPatterns overrides the built-in attack chains.
+    # Each sequence is an ordered list of stage names; subsequence matching —
+    # intervening unrelated calls do not break detection.
+    # Stages: recon | exploit | escalate | exfiltrate
+    # Leave commented to use built-in defaults.
+    # behaviorPatterns:
+    #   - name: "recon_exploit_exfil"
+    #     sequence: ["recon", "exploit", "exfiltrate"]
+    #   - name: "recon_escalate_exfil"
+    #     sequence: ["recon", "escalate", "exfiltrate"]
+    #   - name: "recon_exploit_escalate"
+    #     sequence: ["recon", "exploit", "escalate"]
+
+    # toolStageMap overrides the built-in tool→stage classification.
+    # Keys are stage names; values are tool name substrings (case-insensitive contains match).
+    # Add any MCP tool names here — no code change required.
+    toolStageMap:
+      recon:
+        - "read_policy"
+        - "search_claims"
+        - "web_search"
+        - "read_file"
+        - "list_directory"
+        - "glob"
+        - "grep"
+        - "find"
+        - "get_patient_record"
+        - "get_lab_results"
+        - "get_billing_info"
+      exploit:
+        - "bash"
+        - "run_sql"
+        - "execute"
+        - "run_command"
+        - "shell"
+        - "update_medication"
+        - "write_care_plan"
+        - "create_prescription"
+        - "modify_record"
+        - "delete_record"
+      escalate:
+        - "cloud:iam"
+        - "database:admin"
+        - "sudo"
+        - "chmod"
+        - "chown"
+      exfiltrate:
+        - "write_report"
+        - "send_notification"
+        - "write_file"
+        - "http_post"
+        - "upload"
+        - "send_email"
+        - "ftp"
+        - "scp"
+        - "send_referral"
+        - "export_records"
+
+  ## 5. AUDIT - Always-on, mirrors OTEL tracing in Dynamic_Pod_Sec
+
+  audit:
+    enabled: true
+    logLevel: "info"              # debug | info | warn
+    logAllDecisions: true
+    logToolParameters: true
+    redactedFields:               # never log these
+      - "password"
+      - "secret"
+      - "api_key"
+      - "token"
+      - "authorization"
+    exporters:
+      - type: "stdout"
+      # - type: "otlp"            # uncomment for production OTEL export
+      #   endpoint: "http://otel-collector:4318"
