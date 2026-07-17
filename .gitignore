@@ -67,6 +67,10 @@ sdk/python/dist/
 # Docs — large PDFs
 architecture/docs/EUAIACT_EN_TXT.pdf
 
+# Internal strategy/spec docs — not for the public repo
+artifacts/docs/NORTH-STAR-AUTONOMOUS-AGENT-GOVERNANCE.md
+artifacts/docs/PHASE9-SESSION-COST-TELEMETRY.md
+
 # Terraform
 .terraform/
 *.tfstate
