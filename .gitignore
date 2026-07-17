@@ -46,7 +46,15 @@ Thumbs.db
 # Snapshots — runtime output, not source
 /snapshots/*.jsonl
 /snapshots/fleet-history.jsonl
-scripts/__pycache__/
+/snapshots/governance.json
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+sdk/python/build/
+sdk/python/dist/
 
 # Demo script output
 /demo-output/
@@ -54,6 +62,7 @@ scripts/__pycache__/
 # Claude Code local overrides
 .claude/settings.local.json
 .claude/session-context.md
+/.claude/
 
 # Docs — large PDFs
 architecture/docs/EUAIACT_EN_TXT.pdf

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "perchguard"
+version = "0.1.0"
+description = "Python SDK for PerchGuard, the agentic admission controller"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+authors = [{ name = "PerchGuard" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Droshow/perchguard_ai"
+Documentation = "https://github.com/Droshow/perchguard_ai/blob/main/sdk/python/README.md"
+
+[tool.setuptools.packages.find]
+include = ["perchguard*"]
