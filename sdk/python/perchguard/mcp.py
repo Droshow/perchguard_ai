@@ -1,9 +1,19 @@
+"""Bare JSON-RPC MCP client, orthogonal to governance.
+
+A near-verbatim port of deployments/insurance-agent-python/mcp_client.py.
+Used internally by GovernedAgentLoop; also usable standalone by callers
+building a custom loop.
+"""
+
+from __future__ import annotations
+
 import requests
 
 
 class MCPClient:
-    def __init__(self, url: str):
+    def __init__(self, url: str, *, timeout: float = 10.0) -> None:
         self.url = url.rstrip("/")
+        self.timeout = timeout
         self._next_id = 1
 
     def _rpc(self, method: str, params: dict) -> dict:
@@ -12,7 +22,7 @@ class MCPClient:
         resp = requests.post(
             self.url,
             json={"jsonrpc": "2.0", "id": req_id, "method": method, "params": params},
-            timeout=10,
+            timeout=self.timeout,
         )
         resp.raise_for_status()
         data = resp.json()
