@@ -42,6 +42,51 @@ policies:
       budgetMs: 10000
       skipIfNoIntent: true
 
+  agentMissions:
+    enabled: true
+    # Baseline mission definitions per role — used by semanticFirewall
+    # to verify that user intent aligns with agent's declared scope
+    missions:
+      - role: "developer_agent"
+        mission: "Read and analyze policies and claims for business process automation"
+        authorizedIntents:
+          - "summarise"
+          - "analyze"
+          - "read"
+          - "search"
+          - "audit"
+          - "report"
+      - role: "read_only_agent"
+        mission: "Search policies and claims for informational purposes only"
+        authorizedIntents:
+          - "search"
+          - "find"
+          - "lookup"
+          - "query"
+          - "view"
+      - role: "clinician"
+        mission: "Manage patient care plans and clinical decisions within HIPAA scope"
+        authorizedIntents:
+          - "update care"
+          - "prescribe"
+          - "diagnose"
+          - "refer"
+          - "review labs"
+      - role: "nurse"
+        mission: "Monitor patient status and retrieve clinical data for clinician escalation"
+        authorizedIntents:
+          - "check vitals"
+          - "review labs"
+          - "monitor"
+          - "retrieve"
+      - role: "billing_agent"
+        mission: "Process billing and financial records with minimum necessary clinical access"
+        authorizedIntents:
+          - "invoice"
+          - "process payment"
+          - "billing"
+          - "account"
+
   toolAuthorization:
     enabled: true
     # Allow/deny lists per agent role

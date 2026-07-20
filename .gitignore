@@ -56,6 +56,9 @@ __pycache__/
 sdk/python/build/
 sdk/python/dist/
 
+# Marketing artifacts — local only, not source of truth
+artifacts/docs/marketing/
+
 # Demo script output
 /demo-output/
 

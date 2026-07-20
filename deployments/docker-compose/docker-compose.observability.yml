@@ -49,6 +49,15 @@ services:
       - prometheus
       - loki
 
+  insurance-agent-python:
+    env_file:
+      - ../../.env
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      PERCHGUARD_URL: http://perchguard:8080
+      MCP_URL: http://insurance-mcp-server:8090
+      CLAUDE_MODEL: claude-haiku-4-5-20251001
+
 volumes:
   loki-data:
   grafana-data:

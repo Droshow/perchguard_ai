@@ -72,19 +72,13 @@ services:
     build:
       context: ../..         # repo root — picks up sdk/python for the perchguard SDK
       dockerfile: deployments/insurance-agent-python/Dockerfile
-    env_file:
-      - ../../.env           # provides ANTHROPIC_API_KEY_USED_BY_PERCHGUARD
-    environment:
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY_USED_BY_PERCHGUARD}"
-      PERCHGUARD_URL: "http://perchguard:8080"
-      MCP_URL: "http://insurance-mcp-server:8090"
-      CLAUDE_MODEL: "claude-haiku-4-5-20251001"
+    command: sleep 3600    # keep container running for docker compose exec during demo
     depends_on:
       perchguard:
         condition: service_healthy
       insurance-mcp-server:
         condition: service_started
-    restart: "no"            # runs all 4 tasks, exits — check logs for governance decisions
+    restart: unless-stopped
 
   jaeger:
     image: jaegertracing/all-in-one:1.57
