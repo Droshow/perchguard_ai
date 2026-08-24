@@ -73,6 +73,8 @@ architecture/docs/EUAIACT_EN_TXT.pdf
 # Internal strategy/spec docs — not for the public repo
 artifacts/docs/NORTH-STAR-AUTONOMOUS-AGENT-GOVERNANCE.md
 artifacts/docs/PHASE9-SESSION-COST-TELEMETRY.md
+artifacts/docs/CAGEBREAK-GPT-INCIDENT-ANALYSIS.md
+artifacts/docs/PHASE10-K8S-ISOLATION-OPERATOR.md
 
 # Terraform
 .terraform/
