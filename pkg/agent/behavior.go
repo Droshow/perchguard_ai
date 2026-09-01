@@ -27,7 +27,7 @@ var defaultChains = [][]Stage{
 
 // BehaviorAnalyzer classifies tool calls into attack stages and detects sequences.
 type BehaviorAnalyzer struct {
-	window int      // number of recent events to consider
+	window int       // number of recent events to consider
 	chains [][]Stage // attack chains to detect; falls back to defaultChains if nil
 }
 

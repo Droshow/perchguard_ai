@@ -67,7 +67,7 @@ func TestToolAuthorizationDenyListCaseInsensitive(t *testing.T) {
 		wantDeny bool
 	}{
 		{"bash", true},
-		{"Bash", true},  // Claude Code capitalisation
+		{"Bash", true}, // Claude Code capitalisation
 		{"BASH", true},
 		{"read_file", false},
 		{"Read", false},

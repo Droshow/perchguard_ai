@@ -34,3 +34,20 @@ variable "perchguard_api_key" {
   sensitive   = true
   default     = ""
 }
+
+# ─── Phase 10c: agent workload node group ────────────────────────────────────
+# Real EC2 cost, unlike Fargate's per-pod-second billing — kept small for a
+# lab/portfolio budget. Cilium's DaemonSet + Kata (later) need a real kubelet,
+# which Fargate structurally cannot provide.
+
+variable "agent_node_instance_type" {
+  description = "EC2 instance type for the isolated-agent node group (Phase 10c)."
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "agent_node_desired_size" {
+  description = "Desired node count for the isolated-agent node group (Phase 10c)."
+  type        = number
+  default     = 1
+}

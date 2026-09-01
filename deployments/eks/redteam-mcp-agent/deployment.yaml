@@ -1,0 +1,67 @@
+# Plain manifest, deliberately not Terraform-managed — Phase 10c's shift-left
+# boundary: onboarding a governed agent must stay "write a Deployment, label the
+# namespace, kubectl apply" with zero Terraform and zero PerchGuard code changes.
+# See artifacts/docs/PHASE10-K8S-ISOLATION-OPERATOR.md's Phase 10c section.
+#
+# image is a placeholder — bootstrap.sh sed's in the real ECR URL before apply.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redteam-mcp-agent
+  namespace: redteam-mcp-agent
+  labels:
+    app.kubernetes.io/name: redteam-mcp-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redteam-mcp-agent
+  template:
+    metadata:
+      labels:
+        app: redteam-mcp-agent
+        app.kubernetes.io/name: redteam-mcp-agent
+    spec:
+      # Scheduled onto the isolated-agent node group (Phase 10c) — Fargate can't
+      # host Cilium's node-local enforcement, see deployments/eks/cilium.tf.
+      nodeSelector:
+        perchguard/workload-class: isolated-agent
+      tolerations:
+        - key: "perchguard.io/agent-workload"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534      # nobody
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent
+          image: __REDTEAM_MCP_AGENT_IMAGE__
+          imagePullPolicy: Always
+          command: ["sleep", "3600"]     # idle — runs to completion once execed; avoids Deployment restart-looping a one-shot task
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: perchguard-llm
+                  key: api-key
+                  optional: true
+            - name: PERCHGUARD_MCP_URL
+              value: "http://perchguard.perchguard.svc.cluster.local:8080"
+            - name: CLAUDE_MODEL
+              value: "claude-sonnet-4-6"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

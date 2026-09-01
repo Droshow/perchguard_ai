@@ -7,10 +7,11 @@
 // user when the call is blocked.
 //
 // Two execution paths:
-//   Server mode  — POST to http://localhost:8080/intercept (requires server running).
-//                  Auto-detected: if GET /healthz responds in < 200ms, use server mode.
-//   In-process   — Load policy from disk, run pipeline inline. No server dependency.
-//                  Audit written to ./snapshots/audit.jsonl.
+//
+//	Server mode  — POST to http://localhost:8080/intercept (requires server running).
+//	               Auto-detected: if GET /healthz responds in < 200ms, use server mode.
+//	In-process   — Load policy from disk, run pipeline inline. No server dependency.
+//	               Audit written to ./snapshots/audit.jsonl.
 package main
 
 import (
@@ -29,6 +30,7 @@ import (
 	"github.com/Droshow/PerchGuard/perchguard/pkg/admission/quota"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/admission/validator"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/audit"
+	"github.com/Droshow/PerchGuard/perchguard/pkg/envutil"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/llm"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/policy"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/store"
@@ -95,7 +97,7 @@ func runClaudeHook(post bool) {
 		os.Exit(0)
 	}
 
-	serverAddr := getEnv("PERCHGUARD_ADDR", hookServerDefault)
+	serverAddr := envutil.GetEnv("PERCHGUARD_ADDR", hookServerDefault)
 	if !post && serverIsUp(serverAddr) {
 		runHookServerMode(serverAddr, input)
 		return
@@ -109,7 +111,7 @@ func runHookServerMode(addr string, input claudeHookInput) {
 	req := admission.ToolCallAdmissionRequest{
 		SessionID: input.SessionID,
 		AgentID:   "claude-code",
-		AgentRole: getEnv("PERCHGUARD_AGENT_ROLE", "developer_agent"),
+		AgentRole: envutil.GetEnv("PERCHGUARD_AGENT_ROLE", "developer_agent"),
 		ToolCall: admission.ToolCall{
 			Name:       input.ToolName,
 			Parameters: input.ToolInput,
@@ -168,7 +170,7 @@ func runHookInProcess(input claudeHookInput, post bool) {
 
 	var llmClient llm.Client
 	if key := os.Getenv("PERCHGUARD_LLM_API_KEY"); key != "" {
-		model := getEnv("PERCHGUARD_LLM_MODEL", cfg.Policies.SemanticFirewall.LLM.Model)
+		model := envutil.GetEnv("PERCHGUARD_LLM_MODEL", cfg.Policies.SemanticFirewall.LLM.Model)
 		if model == "" {
 			model = "claude-haiku-4-5"
 		}
@@ -201,7 +203,7 @@ func runHookInProcess(input claudeHookInput, post bool) {
 		pushFn = jsonlSink.Push
 	}
 
-	dbPath := getEnv("PERCHGUARD_DB_PATH", store.DefaultDBPath())
+	dbPath := envutil.GetEnv("PERCHGUARD_DB_PATH", store.DefaultDBPath())
 	if sqliteSink, err := store.NewSQLiteAuditSink(dbPath); err == nil {
 		prev := pushFn
 		pushFn = func(rec store.AuditRecord) {
@@ -235,7 +237,7 @@ func runHookInProcess(input claudeHookInput, post bool) {
 		req := &admission.ToolCallAdmissionRequest{
 			SessionID: input.SessionID,
 			AgentID:   "claude-code",
-			AgentRole: getEnv("PERCHGUARD_AGENT_ROLE", "developer_agent"),
+			AgentRole: envutil.GetEnv("PERCHGUARD_AGENT_ROLE", "developer_agent"),
 			ToolCall: admission.ToolCall{
 				Name:       input.ToolName,
 				Parameters: input.ToolInput,
@@ -251,7 +253,7 @@ func runHookInProcess(input claudeHookInput, post bool) {
 	req := &admission.ToolCallAdmissionRequest{
 		SessionID: input.SessionID,
 		AgentID:   "claude-code",
-		AgentRole: getEnv("PERCHGUARD_AGENT_ROLE", "developer_agent"),
+		AgentRole: envutil.GetEnv("PERCHGUARD_AGENT_ROLE", "developer_agent"),
 		ToolCall: admission.ToolCall{
 			Name:       input.ToolName,
 			Parameters: input.ToolInput,

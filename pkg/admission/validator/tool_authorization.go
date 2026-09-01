@@ -11,15 +11,18 @@ import (
 // ToolAuthorizationValidator enforces role-based tool allow/deny lists.
 //
 // Analogy to EKS-BankingKube:
-//   rbac_checks/check_permission_levels.go  - restricts what verbs/resources a role can use
-//   api_restrictions/check_api_access.go    - blocks access to restricted API paths
+//
+//	rbac_checks/check_permission_levels.go  - restricts what verbs/resources a role can use
+//	api_restrictions/check_api_access.go    - blocks access to restricted API paths
 //
 // Here we ask the same question at the agentic layer:
-//   "Is this agent ROLE allowed to call THIS TOOL with THESE PARAMETERS?"
+//
+//	"Is this agent ROLE allowed to call THIS TOOL with THESE PARAMETERS?"
 //
 // Example policy (from policies.yaml):
-//   read_only_agent: allowed=[read_file, list_directory], denied=[bash, write_file]
-//   developer_agent: allowed=[bash, write_file], denied=[bash:rm -rf, database:drop_*]
+//
+//	read_only_agent: allowed=[read_file, list_directory], denied=[bash, write_file]
+//	developer_agent: allowed=[bash, write_file], denied=[bash:rm -rf, database:drop_*]
 type ToolAuthorizationValidator struct {
 	policy policy.ToolAuthorizationPolicy
 }

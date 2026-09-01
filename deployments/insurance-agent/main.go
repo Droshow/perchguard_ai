@@ -24,9 +24,9 @@ import (
 // --- wire types (mirrors pkg/admission but standalone, no import) ---
 
 type ToolCall struct {
-	Name           string            `json:"name"`
-	Parameters     map[string]any    `json:"parameters"`
-	DestinationURL string            `json:"destination_url,omitempty"`
+	Name           string         `json:"name"`
+	Parameters     map[string]any `json:"parameters"`
+	DestinationURL string         `json:"destination_url,omitempty"`
 }
 
 type Message struct {
@@ -47,22 +47,22 @@ type AdmissionRequest struct {
 }
 
 type AdmissionResponse struct {
-	UID        string `json:"uid"`
-	Decision   string `json:"decision"`
-	Reason     string `json:"reason"`
-	PolicyHit  string `json:"policy_matched,omitempty"`
+	UID       string `json:"uid"`
+	Decision  string `json:"decision"`
+	Reason    string `json:"reason"`
+	PolicyHit string `json:"policy_matched,omitempty"`
 }
 
 // --- scenario definition ---
 
 type scenario struct {
-	number      int
-	title       string
-	threat      string  // what attack/behaviour this represents
-	layer       string  // which layer is expected to catch it
+	number       int
+	title        string
+	threat       string // what attack/behaviour this represents
+	layer        string // which layer is expected to catch it
 	wantDecision string
-	request     AdmissionRequest
-	outbound    bool   // true = POST to /validate/output instead of /intercept
+	request      AdmissionRequest
+	outbound     bool // true = POST to /validate/output instead of /intercept
 }
 
 // --- the eight scenarios ---

@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	defaultBaseURL     = "https://api.anthropic.com"
-	defaultModel       = "claude-haiku-4-5"
-	defaultBudget      = 180 * time.Millisecond
-	anthropicVersion   = "2023-06-01"
+	defaultBaseURL   = "https://api.anthropic.com"
+	defaultModel     = "claude-haiku-4-5"
+	defaultBudget    = 180 * time.Millisecond
+	anthropicVersion = "2023-06-01"
 )
 
 type claudeClient struct {

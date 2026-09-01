@@ -53,8 +53,8 @@ type mockOutbound struct {
 	violation *PolicyViolation
 }
 
-func (m *mockOutbound) Name() string                                                      { return "mock_outbound" }
-func (m *mockOutbound) IsOutbound() bool                                                  { return true }
+func (m *mockOutbound) Name() string     { return "mock_outbound" }
+func (m *mockOutbound) IsOutbound() bool { return true }
 func (m *mockOutbound) Validate(_ context.Context, _ *ToolCallAdmissionRequest) *PolicyViolation {
 	return m.violation
 }

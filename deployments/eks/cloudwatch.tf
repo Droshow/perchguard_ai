@@ -205,16 +205,16 @@ resource "aws_cloudwatch_dashboard" "perchguard" {
           stacked = false
           period  = 60
           metrics = [
-            [{ expression = "RATE(m1)*60", label = "ALLOW",        id = "r1" }],
-            [{ expression = "RATE(m2)*60", label = "DENY",         id = "r2" }],
-            [{ expression = "RATE(m3)*60", label = "MUTATE",       id = "r3" }],
+            [{ expression = "RATE(m1)*60", label = "ALLOW", id = "r1" }],
+            [{ expression = "RATE(m2)*60", label = "DENY", id = "r2" }],
+            [{ expression = "RATE(m3)*60", label = "MUTATE", id = "r3" }],
             [{ expression = "RATE(m4)*60", label = "HUMAN_REVIEW", id = "r4" }],
-            [{ expression = "RATE(m5)*60", label = "TERMINATE",    id = "r5" }],
-            ["PerchGuard", "perchguard_intercept_total", "decision", "ALLOW",        { id = "m1", visible = false, period = 60 }],
-            ["PerchGuard", "perchguard_intercept_total", "decision", "DENY",         { id = "m2", visible = false, period = 60 }],
-            ["PerchGuard", "perchguard_intercept_total", "decision", "MUTATE",       { id = "m3", visible = false, period = 60 }],
+            [{ expression = "RATE(m5)*60", label = "TERMINATE", id = "r5" }],
+            ["PerchGuard", "perchguard_intercept_total", "decision", "ALLOW", { id = "m1", visible = false, period = 60 }],
+            ["PerchGuard", "perchguard_intercept_total", "decision", "DENY", { id = "m2", visible = false, period = 60 }],
+            ["PerchGuard", "perchguard_intercept_total", "decision", "MUTATE", { id = "m3", visible = false, period = 60 }],
             ["PerchGuard", "perchguard_intercept_total", "decision", "HUMAN_REVIEW", { id = "m4", visible = false, period = 60 }],
-            ["PerchGuard", "perchguard_intercept_total", "decision", "TERMINATE",    { id = "m5", visible = false, period = 60 }],
+            ["PerchGuard", "perchguard_intercept_total", "decision", "TERMINATE", { id = "m5", visible = false, period = 60 }],
           ]
           yAxis = { left = { min = 0, label = "decisions/min" } }
         }
@@ -252,7 +252,7 @@ resource "aws_cloudwatch_dashboard" "perchguard" {
           period = 60
           metrics = [
             [{ expression = "dur_sum / dur_count", label = "avg latency", id = "avg_lat" }],
-            ["PerchGuard", "perchguard_intercept_duration_seconds_sum",   { id = "dur_sum",   visible = false, period = 60 }],
+            ["PerchGuard", "perchguard_intercept_duration_seconds_sum", { id = "dur_sum", visible = false, period = 60 }],
             ["PerchGuard", "perchguard_intercept_duration_seconds_count", { id = "dur_count", visible = false, period = 60 }],
           ]
           yAxis = { left = { min = 0, label = "seconds" } }
@@ -272,7 +272,7 @@ resource "aws_cloudwatch_dashboard" "perchguard" {
           period = 60
           metrics = [
             [{ expression = "risk_sum / risk_count", label = "avg risk score", id = "avg_risk" }],
-            ["PerchGuard", "perchguard_session_risk_score_sum",   { id = "risk_sum",   visible = false, period = 60 }],
+            ["PerchGuard", "perchguard_session_risk_score_sum", { id = "risk_sum", visible = false, period = 60 }],
             ["PerchGuard", "perchguard_session_risk_score_count", { id = "risk_count", visible = false, period = 60 }],
           ]
           yAxis = { left = { min = 0, max = 1, label = "risk score" } }
@@ -294,7 +294,7 @@ resource "aws_cloudwatch_dashboard" "perchguard" {
           period = 60
           metrics = [
             [{ expression = "sf_sum / sf_count", label = "avg LLM call", id = "avg_sf" }],
-            ["PerchGuard", "perchguard_semantic_firewall_duration_seconds_sum",   { id = "sf_sum",   visible = false, period = 60 }],
+            ["PerchGuard", "perchguard_semantic_firewall_duration_seconds_sum", { id = "sf_sum", visible = false, period = 60 }],
             ["PerchGuard", "perchguard_semantic_firewall_duration_seconds_count", { id = "sf_count", visible = false, period = 60 }],
           ]
           yAxis = { left = { min = 0, label = "seconds" } }
@@ -313,12 +313,12 @@ resource "aws_cloudwatch_dashboard" "perchguard" {
           view   = "timeSeries"
           period = 60
           metrics = [
-            ["PerchGuard", "perchguard_audit_ring_utilization", { label = "audit ring records",      yAxis = "left"  }],
-            ["PerchGuard", "perchguard_policy_reload_total",    { label = "policy reloads (cumul.)", yAxis = "right" }],
+            ["PerchGuard", "perchguard_audit_ring_utilization", { label = "audit ring records", yAxis = "left" }],
+            ["PerchGuard", "perchguard_policy_reload_total", { label = "policy reloads (cumul.)", yAxis = "right" }],
           ]
           yAxis = {
             left  = { min = 0, label = "records" }
-            right = { min = 0, label = "reloads"  }
+            right = { min = 0, label = "reloads" }
           }
         }
       },

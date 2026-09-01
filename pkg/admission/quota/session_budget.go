@@ -1,13 +1,15 @@
 // Package quota implements PerchGuard's resource quota layer.
 //
 // Analogy to EKS-BankingKube:
-//   resource_limits/check_resource_limits.go  → SessionBudgetChecker (token/cost limits)
-//   resource_limits/check_resource_requests.go → DepthLimiter        (recursion limits)
+//
+//	resource_limits/check_resource_limits.go  → SessionBudgetChecker (token/cost limits)
+//	resource_limits/check_resource_requests.go → DepthLimiter        (recursion limits)
 //
 // Novel concern in agentic systems: "Denial-of-Wallet"
-//   An agent loop that calls GPT-4o 10,000 times can cost hundreds of dollars
-//   before anyone notices. The quota layer is the first check (fail-fast) because
-//   it's purely stateful arithmetic - no LLM needed.
+//
+//	An agent loop that calls GPT-4o 10,000 times can cost hundreds of dollars
+//	before anyone notices. The quota layer is the first check (fail-fast) because
+//	it's purely stateful arithmetic - no LLM needed.
 package quota
 
 import (

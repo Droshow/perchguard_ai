@@ -184,6 +184,11 @@ policies:
       - "external-research.io" # PHI exfiltration scenario — explicitly blocked
     blockUnknownDestinations: true
     action: DENY
+    # Consumed by the K8s operator (Phase 10b) to generate a coarse default-deny-egress
+    # NetworkPolicy — ports allowed to any destination, since plain NetworkPolicy can't
+    # match the hostnames above (that needs Cilium FQDN rules, Phase 10c). Not enforced
+    # by this app-layer validator.
+    allowedPorts: [443, 80]
 
   ## 2. MUTATION LAYER - "The Safety Net"
   ##    Mirrors: mutatePod() / applyBaselineSecurity() in webhook.go

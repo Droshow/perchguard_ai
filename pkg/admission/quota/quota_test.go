@@ -101,10 +101,10 @@ func TestSessionBudgetChecker_CostCapEnforced(t *testing.T) {
 
 func TestDepthLimiter(t *testing.T) {
 	tests := []struct {
-		name     string
-		policy   policy.DepthLimiterPolicy
-		depth    int
-		wantNil  bool
+		name    string
+		policy  policy.DepthLimiterPolicy
+		depth   int
+		wantNil bool
 	}{
 		{
 			name:    "under limit ALLOW",

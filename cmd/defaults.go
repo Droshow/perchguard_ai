@@ -48,7 +48,8 @@ func findPolicyPath(name string) string {
 }
 
 // configDir returns the XDG-style user config directory for PerchGuard.
-//   ~/.config/perchguard  (Linux / macOS)
+//
+//	~/.config/perchguard  (Linux / macOS)
 func configDir() string {
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" {

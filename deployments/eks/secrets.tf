@@ -10,8 +10,8 @@ resource "kubernetes_secret" "perchguard_secrets" {
   }
 
   data = {
-    "key"     = var.perchguard_api_key  # matches values.yaml secrets.apiKeySecretKey: "key"
-    "api-key" = var.llm_api_key         # matches values.yaml secrets.llmApiKeySecretKey: "api-key"
+    "key"     = var.perchguard_api_key # matches values.yaml secrets.apiKeySecretKey: "key"
+    "api-key" = var.llm_api_key        # matches values.yaml secrets.llmApiKeySecretKey: "api-key"
   }
 
   type = "Opaque"

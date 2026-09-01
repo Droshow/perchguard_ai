@@ -26,22 +26,22 @@ type mcpToolResult struct {
 // Proxy intercepts MCP JSON-RPC messages, runs tools/call requests through
 // the PerchGuard admission pipeline, then forwards or blocks.
 type Proxy struct {
-	interceptor  *admission.Interceptor
-	upstream     UpstreamTransport
-	downstream   DownstreamTransport
-	sessionID    string
-	agentID      string
-	agentRole    string
-	userIntent   string // set per-request from X-Perchguard-User-Intent header
+	interceptor   *admission.Interceptor
+	upstream      UpstreamTransport
+	downstream    DownstreamTransport
+	sessionID     string
+	agentID       string
+	agentRole     string
+	userIntent    string // set per-request from X-Perchguard-User-Intent header
 	governedModel string // model being governed, used for cost estimation
 }
 
 type Option func(*Proxy)
 
-func WithSessionID(id string) Option      { return func(p *Proxy) { p.sessionID = id } }
-func WithAgentID(id string) Option        { return func(p *Proxy) { p.agentID = id } }
-func WithAgentRole(role string) Option    { return func(p *Proxy) { p.agentRole = role } }
-func WithGovernedModel(m string) Option   { return func(p *Proxy) { p.governedModel = m } }
+func WithSessionID(id string) Option    { return func(p *Proxy) { p.sessionID = id } }
+func WithAgentID(id string) Option      { return func(p *Proxy) { p.agentID = id } }
+func WithAgentRole(role string) Option  { return func(p *Proxy) { p.agentRole = role } }
+func WithGovernedModel(m string) Option { return func(p *Proxy) { p.governedModel = m } }
 
 func NewProxy(i *admission.Interceptor, up UpstreamTransport, down DownstreamTransport, opts ...Option) *Proxy {
 	p := &Proxy{

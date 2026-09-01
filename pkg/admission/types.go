@@ -4,10 +4,11 @@
 // pattern used in EKS-BankingKube/Dynamic_Pod_Sec.
 //
 // Mapping:
-//   K8s AdmissionReview     → ToolCallAdmissionRequest
-//   K8s AdmissionResponse   → ToolCallAdmissionResponse
-//   K8s Pod spec            → ToolCall
-//   kubectl apply           → agent.execute_tool()
+//
+//	K8s AdmissionReview     → ToolCallAdmissionRequest
+//	K8s AdmissionResponse   → ToolCallAdmissionResponse
+//	K8s Pod spec            → ToolCall
+//	kubectl apply           → agent.execute_tool()
 package admission
 
 import (
@@ -21,10 +22,10 @@ type Decision string
 
 const (
 	DecisionAllow       Decision = "ALLOW"        // Tool call is safe - proceed
-	DecisionDeny        Decision = "DENY"          // Tool call is blocked - return error to agent
-	DecisionMutate      Decision = "MUTATE"        // Tool call allowed but parameters were modified
-	DecisionHumanReview Decision = "HUMAN_REVIEW"  // Escalate to human - pause agent execution
-	DecisionTerminate   Decision = "TERMINATE"     // Kill the session (budget exceeded, runaway loop)
+	DecisionDeny        Decision = "DENY"         // Tool call is blocked - return error to agent
+	DecisionMutate      Decision = "MUTATE"       // Tool call allowed but parameters were modified
+	DecisionHumanReview Decision = "HUMAN_REVIEW" // Escalate to human - pause agent execution
+	DecisionTerminate   Decision = "TERMINATE"    // Kill the session (budget exceeded, runaway loop)
 )
 
 // ToolCall represents a single tool invocation proposed by the agent.
@@ -42,7 +43,7 @@ type ToolCall struct {
 
 // Message represents one turn in the conversation history.
 type Message struct {
-	Role    string `json:"role"`    // "user" | "assistant" | "tool"
+	Role    string `json:"role"` // "user" | "assistant" | "tool"
 	Content string `json:"content"`
 }
 
@@ -122,10 +123,10 @@ type ToolCallAdmissionResponse struct {
 	Reason             string              `json:"reason"`
 	PolicyMatched      string              `json:"policy_matched,omitempty"`
 	Violations         []PolicyViolation   `json:"violations,omitempty"`
-	HumanReviewContext *HumanReviewContext  `json:"human_review_context,omitempty"`
+	HumanReviewContext *HumanReviewContext `json:"human_review_context,omitempty"`
 	// SanitizedOutput is set on the outbound path when Decision == DecisionMutate.
 	// The agent should use this cleaned output instead of the raw tool result.
-	SanitizedOutput    *string             `json:"sanitized_output,omitempty"`
+	SanitizedOutput *string `json:"sanitized_output,omitempty"`
 	// SessionRisk is the cumulative 0.0–1.0 fleet risk score for this session after
 	// this call. Nil when no fleet validator is active. Callers can use this to make
 	// adaptive decisions (slow down, alert, escalate) without polling GET /api/audit.
@@ -177,13 +178,13 @@ type ReviewDispatcher interface {
 
 // ReviewRequest is the payload sent to a human review webhook.
 type ReviewRequest struct {
-	RequestUID string           `json:"request_uid"`
-	SessionID  string           `json:"session_id"`
-	AgentID    string           `json:"agent_id"`
-	ToolCall   ToolCall         `json:"tool_call"`
-	UserIntent string           `json:"user_intent"`
+	RequestUID string            `json:"request_uid"`
+	SessionID  string            `json:"session_id"`
+	AgentID    string            `json:"agent_id"`
+	ToolCall   ToolCall          `json:"tool_call"`
+	UserIntent string            `json:"user_intent"`
 	Violations []PolicyViolation `json:"violations"`
-	Summary    string           `json:"summary"`
+	Summary    string            `json:"summary"`
 }
 
 // ReviewResponse is the response from the human review webhook.
@@ -216,21 +217,21 @@ type HumanReviewContext struct {
 // AuditEntry is written to the audit log for every admission decision.
 // OpenTelemetry spans are built from these entries.
 type AuditEntry struct {
-	RequestUID    string    `json:"request_uid"`
-	SessionID     string    `json:"session_id"`
-	AgentID       string    `json:"agent_id"`
-	ToolName      string    `json:"tool_name"`
-	Decision      Decision  `json:"decision"`
-	PolicyHit     string    `json:"policy_hit,omitempty"`
-	Reason        string    `json:"reason"`
-	Timestamp     time.Time `json:"timestamp"`
-	DurationMs    int64     `json:"duration_ms"`
-	RiskScore     float64  `json:"risk_score"`     // cumulative session risk at the moment of this decision
-	Registered    bool     `json:"registered"`     // false when no valid agent token was presented
-	PolicyVersion string   `json:"policy_version"` // sha256[:8] of policies.yaml in effect at decision time
-	DataRefsIn       []string `json:"data_refs_in,omitempty"`
-	DataRefOut       string   `json:"data_ref_out,omitempty"`
-	ObserveMode      bool     `json:"observe_mode,omitempty"`
-	ObservedDecision Decision `json:"observed_decision,omitempty"`
-	DriftScore       *float64 `json:"drift_score,omitempty"` // intent drift for this call; nil when no fleet validator scored it
+	RequestUID       string    `json:"request_uid"`
+	SessionID        string    `json:"session_id"`
+	AgentID          string    `json:"agent_id"`
+	ToolName         string    `json:"tool_name"`
+	Decision         Decision  `json:"decision"`
+	PolicyHit        string    `json:"policy_hit,omitempty"`
+	Reason           string    `json:"reason"`
+	Timestamp        time.Time `json:"timestamp"`
+	DurationMs       int64     `json:"duration_ms"`
+	RiskScore        float64   `json:"risk_score"`     // cumulative session risk at the moment of this decision
+	Registered       bool      `json:"registered"`     // false when no valid agent token was presented
+	PolicyVersion    string    `json:"policy_version"` // sha256[:8] of policies.yaml in effect at decision time
+	DataRefsIn       []string  `json:"data_refs_in,omitempty"`
+	DataRefOut       string    `json:"data_ref_out,omitempty"`
+	ObserveMode      bool      `json:"observe_mode,omitempty"`
+	ObservedDecision Decision  `json:"observed_decision,omitempty"`
+	DriftScore       *float64  `json:"drift_score,omitempty"` // intent drift for this call; nil when no fleet validator scored it
 }

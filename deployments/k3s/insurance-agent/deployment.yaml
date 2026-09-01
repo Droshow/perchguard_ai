@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insurance-agent
+  namespace: insurance-agent
+  labels:
+    app.kubernetes.io/name: insurance-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: insurance-agent
+  template:
+    metadata:
+      labels:
+        app: insurance-agent
+        app.kubernetes.io/name: insurance-agent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534      # nobody
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent
+          image: insurance-agent:latest
+          imagePullPolicy: IfNotPresent  # use local image in K3s dev
+          command: ["sleep", "3600"]     # idle — exec in for the explicit-governance SDK demo
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

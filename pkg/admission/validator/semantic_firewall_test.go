@@ -95,24 +95,24 @@ func TestSemanticFirewallValidator(t *testing.T) {
 			wantCalls: 1,
 		},
 		{
-			name:   "LLM error — fail open",
-			policy: sfPolicy(true, 0.6),
-			req:    &admission.ToolCallAdmissionRequest{UserIntent: "x", ToolCall: admission.ToolCall{Name: "bash"}},
-			mock:   &mockLLM{err: errors.New("api down")},
+			name:      "LLM error — fail open",
+			policy:    sfPolicy(true, 0.6),
+			req:       &admission.ToolCallAdmissionRequest{UserIntent: "x", ToolCall: admission.ToolCall{Name: "bash"}},
+			mock:      &mockLLM{err: errors.New("api down")},
 			wantCalls: 1,
 		},
 		{
-			name:   "LLM timeout — fail open",
-			policy: sfPolicy(true, 0.6),
-			req:    &admission.ToolCallAdmissionRequest{UserIntent: "x", ToolCall: admission.ToolCall{Name: "bash"}},
-			mock:   &mockLLM{sleep: 600 * time.Millisecond}, // exceeds 500ms budget
+			name:      "LLM timeout — fail open",
+			policy:    sfPolicy(true, 0.6),
+			req:       &admission.ToolCallAdmissionRequest{UserIntent: "x", ToolCall: admission.ToolCall{Name: "bash"}},
+			mock:      &mockLLM{sleep: 600 * time.Millisecond}, // exceeds 500ms budget
 			wantCalls: 1,
 		},
 		{
-			name:   "invalid JSON — fail open",
-			policy: sfPolicy(true, 0.6),
-			req:    &admission.ToolCallAdmissionRequest{UserIntent: "x", ToolCall: admission.ToolCall{Name: "bash"}},
-			mock:   &mockLLM{resp: llm.CompletionResponse{Content: "not json at all"}},
+			name:      "invalid JSON — fail open",
+			policy:    sfPolicy(true, 0.6),
+			req:       &admission.ToolCallAdmissionRequest{UserIntent: "x", ToolCall: admission.ToolCall{Name: "bash"}},
+			mock:      &mockLLM{resp: llm.CompletionResponse{Content: "not json at all"}},
 			wantCalls: 1,
 		},
 	}

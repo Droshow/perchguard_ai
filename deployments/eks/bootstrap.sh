@@ -36,18 +36,22 @@ if [[ -z "${AWS_ACCOUNT_ID:-}" ]]; then
 fi
 
 ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}"
+ECR_URL_REDTEAM="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}-redteam-mcp-agent"
+ECR_URL_OPERATOR="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}-operator"
 
-# ── 1. Create ECR repo first so we have somewhere to push ────────────────────
-echo "[1/4] Provisioning ECR repository..."
+# ── 1. Create ECR repos first so we have somewhere to push ───────────────────
+echo "[1/4] Provisioning ECR repositories..."
 cd "${SCRIPT_DIR}"
 terraform init -input=false
 terraform apply -input=false -auto-approve \
   -target=aws_ecr_repository.perchguard \
+  -target=aws_ecr_repository.redteam_mcp_agent \
+  -target=aws_ecr_repository.perchguard_operator \
   -var="aws_account_id=${AWS_ACCOUNT_ID}" \
   -var="aws_region=${AWS_REGION}"
 
-# ── 2. Build and push the PerchGuard image ───────────────────────────────────
-echo "[2/4] Building and pushing PerchGuard image to ECR..."
+# ── 2. Build and push images ──────────────────────────────────────────────────
+echo "[2/4] Building and pushing images to ECR..."
 aws ecr get-login-password --region "${AWS_REGION}" \
   | docker login --username AWS --password-stdin "${ECR_URL}"
 
@@ -56,6 +60,18 @@ docker build -t "${CLUSTER_NAME}:latest" .
 docker tag "${CLUSTER_NAME}:latest" "${ECR_URL}:latest"
 docker push "${ECR_URL}:latest"
 echo "  Pushed: ${ECR_URL}:latest"
+
+# Phase 10c: the operator binary and the redteam-mcp-agent demo image, moved
+# onto the isolated-agent node group (see deployments/eks/redteam-mcp-agent/).
+docker build -t "perchguard-operator:latest" -f Dockerfile.operator .
+docker tag "perchguard-operator:latest" "${ECR_URL_OPERATOR}:latest"
+docker push "${ECR_URL_OPERATOR}:latest"
+echo "  Pushed: ${ECR_URL_OPERATOR}:latest"
+
+docker build -t "redteam-mcp-agent:latest" deployments/redteam-mcp-agent
+docker tag "redteam-mcp-agent:latest" "${ECR_URL_REDTEAM}:latest"
+docker push "${ECR_URL_REDTEAM}:latest"
+echo "  Pushed: ${ECR_URL_REDTEAM}:latest"
 
 # ── 3. Two-phase terraform apply ─────────────────────────────────────────────
 # Phase A: AWS-only resources (VPC, EKS cluster, Fargate, IAM, OIDC, CW dashboard).
@@ -70,7 +86,8 @@ terraform apply -input=false -auto-approve $TF_VARS \
   -target=aws_eks_fargate_profile.kube_system \
   -target=aws_iam_role.adot \
   -target=aws_iam_role_policy.adot_cloudwatch \
-  -target=aws_cloudwatch_dashboard.perchguard
+  -target=aws_cloudwatch_dashboard.perchguard \
+  -target=aws_eks_node_group.agent_workloads
 
 # ── 4. Configure kubectl so the kubernetes/helm providers can connect ─────────
 echo "[4/5] Configuring kubectl..."
@@ -86,9 +103,19 @@ terraform apply -input=false -auto-approve $TF_VARS \
   -target=null_resource.gateway_api_crds
 
 # Phase C: Full apply — all remaining resources (LBC, PerchGuard Helm, ADOT,
-# Gateway, HTTPRoutes) now that the cluster is healthy and CRDs are installed.
-echo "[4/5] Phase C — deploying workloads (LBC, PerchGuard, ADOT, Gateway ~6 min)..."
+# Gateway, HTTPRoutes, Cilium, the AgentIsolationPolicy CRD, the operator) now
+# that the cluster is healthy and CRDs are installed.
+echo "[4/5] Phase C — deploying workloads (LBC, PerchGuard, ADOT, Gateway, Cilium, operator ~8 min)..."
 terraform apply -input=false -auto-approve $TF_VARS
+
+# Phase 10c: redteam-mcp-agent is deliberately NOT a Terraform resource — see the
+# shift-left note in artifacts/docs/PHASE10-K8S-ISOLATION-OPERATOR.md's Phase 10c
+# section. Onboarding a governed agent stays "write a Deployment, label the
+# namespace, kubectl apply", same as it already is on k3s.
+echo "[4/5] Deploying redteam-mcp-agent onto the isolated-agent node group..."
+kubectl apply -f "${SCRIPT_DIR}/redteam-mcp-agent/namespace.yaml"
+sed "s|__REDTEAM_MCP_AGENT_IMAGE__|${ECR_URL_REDTEAM}:latest|" \
+  "${SCRIPT_DIR}/redteam-mcp-agent/deployment.yaml" | kubectl apply -f -
 
 echo "[5/5] Waiting up to 3 minutes for ALB provisioning..."
 for i in $(seq 1 24); do

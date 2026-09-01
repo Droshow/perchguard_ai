@@ -52,6 +52,20 @@ kubectl apply -f "${SCRIPT_DIR}/service.yaml"
 kubectl apply -f "${SCRIPT_DIR}/deployment.yaml"
 kubectl apply -f "${SCRIPT_DIR}/webhook-config.yaml"
 
+# Demo agent workloads (Phase 10a) — idle pods, exec in to run their demos.
+kubectl apply -f "${SCRIPT_DIR}/insurance-agent/namespace.yaml"
+kubectl apply -f "${SCRIPT_DIR}/insurance-agent/deployment.yaml"
+kubectl apply -f "${SCRIPT_DIR}/healthcare-agent/namespace.yaml"
+kubectl apply -f "${SCRIPT_DIR}/healthcare-agent/deployment.yaml"
+kubectl apply -f "${SCRIPT_DIR}/redteam-mcp-agent/namespace.yaml"
+kubectl apply -f "${SCRIPT_DIR}/redteam-mcp-agent/deployment.yaml"
+
+# Isolation operator (Phase 10b) — CRD before consumer: the operator's own RBAC/
+# Deployment reference the security.perchguard.io/v1alpha1 API this CRD registers.
+kubectl apply -f "${SCRIPT_DIR}/agent-isolation-policy-crd.yaml"
+kubectl apply -f "${SCRIPT_DIR}/perchguard-operator/rbac.yaml"
+kubectl apply -f "${SCRIPT_DIR}/perchguard-operator/deployment.yaml"
+
 echo ""
 echo "Done. Check rollout status with:"
 echo "  kubectl rollout status deployment/perchguard -n ${NAMESPACE}"

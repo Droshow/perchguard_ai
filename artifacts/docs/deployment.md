@@ -51,6 +51,17 @@ k3d cluster create perchguard --port "8080:30080@loadbalancer"
 docker build -t perchguard:latest .
 k3d image import perchguard:latest -c perchguard
 
+# 2b. Build the demo agent images too (Phase 10a — real k8s pods, not just docker-compose)
+docker build -t insurance-agent:latest -f deployments/insurance-agent-python/Dockerfile .
+docker build -t healthcare-agent:latest deployments/healthcare-agent-python
+docker build -t redteam-mcp-agent:latest deployments/redteam-mcp-agent
+k3d image import insurance-agent:latest healthcare-agent:latest redteam-mcp-agent:latest -c perchguard
+
+# 2c. Build the isolation-operator image (Phase 10b — separate binary/Deployment
+# from the admission controller, see cmd/perchguard-operator/main.go)
+docker build -t perchguard-operator:latest -f Dockerfile.operator .
+k3d image import perchguard-operator:latest -c perchguard
+
 # 3. Deploy
 export ANTHROPIC_API_KEY_USED_BY_PERCHGUARD=sk-ant-...   # optional
 
@@ -61,6 +72,19 @@ curl http://localhost:8080/healthz
 ```
 
 The bootstrap script creates the `perchguard` namespace, injects secrets, and applies all manifests. Re-running is safe (idempotent).
+
+It also applies one namespace + Deployment per demo agent (`insurance-agent`,
+`healthcare-agent`, `redteam-mcp-agent`), each labeled `perchguard/intercept: "true"`.
+These pods run `sleep 3600` — they exist as real, hardened k8s pods so later
+`NetworkPolicy`/`RuntimeClass` work has something to attach to, but nothing runs their
+task flow automatically yet. `kubectl exec -n insurance-agent deploy/insurance-agent --
+python agent.py` (or the equivalent for the other two) to drive a demo by hand.
+
+It also applies the `AgentIsolationPolicy` CRD and the `perchguard-operator` Deployment
+(Phase 10b). The operator only reads `configs/policies.yaml` and reports status in this
+phase — `kubectl get agentisolationpolicy default -o yaml` shows a `Reconciled`
+condition and the translated `spec.egress`, but nothing is enforced against cluster
+traffic until a later phase flips `spec.mode` to `Enforce`.
 
 To use the Helm chart instead:
 
@@ -83,9 +107,11 @@ Single `terraform apply` from zero to a running cluster. `terraform destroy` rem
 
 **Requirements:** AWS CLI (authenticated), Terraform ≥ 1.6, Docker, kubectl, helm.
 
-**What gets created:** VPC (2 public subnets), EKS Fargate cluster, ECR repository, AWS Load Balancer Controller, Kubernetes Gateway API (GatewayClass: alb), ALB with HTTPRoutes, PerchGuard deployment.
+**What gets created:** VPC (2 public + 2 private subnets), EKS Fargate cluster, ECR repositories (PerchGuard, `perchguard-operator`, `redteam-mcp-agent`), AWS Load Balancer Controller, Kubernetes Gateway API (GatewayClass: alb), ALB with HTTPRoutes, PerchGuard deployment — plus, since Phase 10c, a 1-node EC2 node group running Cilium CNI, the `AgentIsolationPolicy` CRD, the `perchguard-operator` Deployment, and `redteam-mcp-agent` scheduled onto that node group.
 
-No bastion, no VPN, no private subnets. kubectl works directly from your machine.
+No bastion, no VPN. kubectl works directly from your machine.
+
+**Real cost note (Phase 10c):** everything else here is Fargate/serverless — near-zero idle cost. The new node group is a real EC2 instance billed per-hour (`t3.medium` ≈ $0.04/hr in `eu-central-1`) for as long as it exists. `terraform destroy -target=aws_eks_node_group.agent_workloads` (plus its Cilium/agent dependents) between test sessions if you don't need it running continuously. Cilium/`IsolationEnforcer` ship in `Observe` mode by default — nothing blocks real traffic until a human flips `AgentIsolationPolicy/default`'s `spec.mode` to `Enforce`.
 
 ```bash
 # 1. Set environment
@@ -122,6 +148,8 @@ terraform destroy -var="aws_account_id=$AWS_ACCOUNT_ID"
 | `kubernetes_version` | `1.31` | EKS version. |
 | `llm_api_key` | `""` | Anthropic key for semantic firewall. |
 | `perchguard_api_key` | `""` | Management API key. Auto-generated if empty. |
+| `agent_node_instance_type` | `t3.medium` | EC2 instance type for the isolated-agent node group (Phase 10c). |
+| `agent_node_desired_size` | `1` | Node count for the isolated-agent node group (Phase 10c). |
 
 **TLS:** The ALB terminates HTTP by default. To add TLS, provision an ACM certificate for your domain and add to `gateway.tf`:
 

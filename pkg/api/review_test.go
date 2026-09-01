@@ -59,7 +59,9 @@ func submitPendingReview(t *testing.T, mux http.Handler, requestUID string) stri
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("submit review: want 200, got %d", resp.StatusCode)
 	}
-	var out struct{ ID string `json:"id"` }
+	var out struct {
+		ID string `json:"id"`
+	}
 	json.NewDecoder(resp.Body).Decode(&out)
 	return out.ID
 }

@@ -11,7 +11,8 @@ import (
 // DataExfiltrationValidator blocks outbound tool calls to unknown/untrusted destinations.
 //
 // This is the agentic equivalent of:
-//   network_security/check_egress.go  - enforces allowed egress CIDRs for pods
+//
+//	network_security/check_egress.go  - enforces allowed egress CIDRs for pods
 //
 // Attack scenario: Indirect prompt injection causes the agent to believe it should
 // POST sensitive data to attacker.com. PerchGuard's outbound admission policy
