@@ -1,5 +1,5 @@
 output "cluster_endpoint" {
-  description = "EKS API endpoint — use with aws eks update-kubeconfig."
+  description = "EKS API endpoint."
   value       = aws_eks_cluster.perchguard.endpoint
 }
 
@@ -9,8 +9,8 @@ output "ecr_url" {
 }
 
 output "kubeconfig_command" {
-  description = "Run this to configure kubectl."
-  value       = "aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.aws_region}"
+  description = "Terraform renders this file itself (local_file.kubeconfig) — just point kubectl at it. Never merged into ~/.kube/config."
+  value       = "export KUBECONFIG=${local_file.kubeconfig.filename}"
 }
 
 output "alb_dns" {

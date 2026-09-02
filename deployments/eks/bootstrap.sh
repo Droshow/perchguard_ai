@@ -39,6 +39,11 @@ ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}"
 ECR_URL_REDTEAM="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}-redteam-mcp-agent"
 ECR_URL_OPERATOR="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${CLUSTER_NAME}-operator"
 
+# Project-local kubeconfig (deployments/eks/.kubeconfig), rendered once by
+# Terraform (local_file.kubeconfig in kubeconfig.tf) and never merged into
+# ~/.kube/config — see kubeconfig.tf for why that used to get corrupted.
+export KUBECONFIG="${SCRIPT_DIR}/.kubeconfig"
+
 # ── 1. Create ECR repos first so we have somewhere to push ───────────────────
 echo "[1/4] Provisioning ECR repositories..."
 cd "${SCRIPT_DIR}"
@@ -81,6 +86,13 @@ echo "[3/4] Phase A — provisioning AWS infrastructure (EKS ~12 min)..."
 cd "${SCRIPT_DIR}"
 TF_VARS="-var=aws_account_id=${AWS_ACCOUNT_ID} -var=aws_region=${AWS_REGION} -var=llm_api_key=${PERCHGUARD_LLM_API_KEY:-} -var=perchguard_api_key=${PERCHGUARD_API_KEY:-}"
 terraform apply -input=false -auto-approve $TF_VARS \
+  -target=aws_internet_gateway.perchguard \
+  -target=aws_eip.nat \
+  -target=aws_nat_gateway.perchguard \
+  -target=aws_route_table.public \
+  -target=aws_route_table.private \
+  -target=aws_route_table_association.public \
+  -target=aws_route_table_association.private \
   -target=aws_eks_cluster.perchguard \
   -target=aws_eks_fargate_profile.perchguard \
   -target=aws_eks_fargate_profile.kube_system \
@@ -89,9 +101,16 @@ terraform apply -input=false -auto-approve $TF_VARS \
   -target=aws_cloudwatch_dashboard.perchguard \
   -target=aws_eks_node_group.agent_workloads
 
-# ── 4. Configure kubectl so the kubernetes/helm providers can connect ─────────
-echo "[4/5] Configuring kubectl..."
-aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}"
+# ── 4. Render the project-local kubeconfig (local_file.kubeconfig) ───────────
+# Nothing here calls `aws eks update-kubeconfig` — that writes to the shared
+# ~/.kube/config, and Terraform's own kubectl provisioners running in parallel
+# is exactly what corrupted it before. Terraform is the sole writer of
+# ${KUBECONFIG}; everything below only reads it.
+echo "[4/5] Rendering project-local kubeconfig..."
+terraform apply -input=false -auto-approve $TF_VARS -target=local_file.kubeconfig
+kubectl --kubeconfig "${KUBECONFIG}" config view --raw >/dev/null
+kubectl --kubeconfig "${KUBECONFIG}" cluster-info >/dev/null
+echo "  KUBECONFIG=${KUBECONFIG} — validated."
 
 # Phase B: CoreDNS patch + Gateway API CRDs.
 # kubernetes_manifest validates GVK at plan time — the CRDs must exist in the

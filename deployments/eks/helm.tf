@@ -8,8 +8,10 @@ resource "null_resource" "coredns_fargate_patch" {
   }
 
   provisioner "local-exec" {
+    environment = {
+      KUBECONFIG = local_file.kubeconfig.filename
+    }
     command = <<-EOT
-      aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.aws_region}
       kubectl rollout status deployment/coredns -n kube-system --timeout=3m || true
       kubectl patch deployment coredns -n kube-system --type=json \
         -p='[{"op":"remove","path":"/spec/template/metadata/annotations/eks.amazonaws.com~1compute-type"}]' \
@@ -22,6 +24,7 @@ resource "null_resource" "coredns_fargate_patch" {
   depends_on = [
     aws_eks_fargate_profile.kube_system,
     aws_eks_fargate_profile.perchguard,
+    local_file.kubeconfig,
   ]
 }
 

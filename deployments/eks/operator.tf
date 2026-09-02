@@ -12,8 +12,10 @@ resource "null_resource" "perchguard_operator_rbac" {
   }
 
   provisioner "local-exec" {
+    environment = {
+      KUBECONFIG = local_file.kubeconfig.filename
+    }
     command = <<-EOT
-      aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.aws_region}
       kubectl apply -f ${path.module}/../k3s/perchguard-operator/rbac.yaml
     EOT
   }
@@ -21,6 +23,7 @@ resource "null_resource" "perchguard_operator_rbac" {
   depends_on = [
     null_resource.coredns_fargate_patch,
     kubernetes_namespace.perchguard,
+    local_file.kubeconfig,
   ]
 }
 

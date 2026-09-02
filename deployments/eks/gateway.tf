@@ -10,15 +10,42 @@ resource "null_resource" "gateway_api_crds" {
   }
 
   provisioner "local-exec" {
+    environment = {
+      KUBECONFIG = local_file.kubeconfig.filename
+    }
     command = <<-EOT
-      aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.aws_region}
       kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
       kubectl wait --for=condition=Established crd/gateways.gateway.networking.k8s.io --timeout=60s
       kubectl wait --for=condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=60s
     EOT
   }
 
-  depends_on = [null_resource.coredns_fargate_patch]
+  depends_on = [null_resource.coredns_fargate_patch, local_file.kubeconfig]
+}
+
+# ─── LoadBalancerConfiguration ────────────────────────────────────────────────
+# The LBC's Gateway API integration does NOT read the legacy
+# `alb.ingress.kubernetes.io/*` annotations (those are Ingress-only) — it
+# reads this CRD instead, referenced from the GatewayClass below. Without it
+# the ALB silently defaults to internal, no error, no warning.
+
+resource "kubernetes_manifest" "gateway_lb_config" {
+  manifest = {
+    apiVersion = "gateway.k8s.aws/v1beta1"
+    kind       = "LoadBalancerConfiguration"
+    metadata = {
+      name      = "perchguard-alb"
+      namespace = "perchguard"
+    }
+    spec = {
+      scheme = "internet-facing"
+    }
+  }
+
+  depends_on = [
+    kubernetes_namespace.perchguard,
+    null_resource.gateway_api_crds,
+  ]
 }
 
 # ─── GatewayClass ─────────────────────────────────────────────────────────────
@@ -33,18 +60,30 @@ resource "kubernetes_manifest" "gateway_class" {
     }
     spec = {
       controllerName = "gateway.k8s.aws/alb"
+      parametersRef = {
+        group     = "gateway.k8s.aws"
+        kind      = "LoadBalancerConfiguration"
+        name      = "perchguard-alb"
+        namespace = "perchguard"
+      }
     }
   }
 
   depends_on = [
     null_resource.gateway_api_crds,
     helm_release.lbc,
+    kubernetes_manifest.gateway_lb_config,
   ]
 }
 
 # ─── Gateway ──────────────────────────────────────────────────────────────────
 # One Gateway = one ALB. The LBC provisions it when it sees this resource.
-# internet-facing: ALB is public. ip: Fargate requires IP target mode.
+# Scheme comes from gateway_lb_config above via the GatewayClass parametersRef.
+# ip target-type: Fargate pods have no node to attach a target group to by
+# instance ID, so IP mode is the only option — this appears to already be the
+# LBC's default for Fargate-backed Services/target groups; if a future chart
+# upgrade changes that default, it'd need to move to a TargetGroupConfiguration
+# CRD (the Gateway API equivalent of the old target-type annotation).
 
 resource "kubernetes_manifest" "gateway" {
   manifest = {
@@ -53,10 +92,6 @@ resource "kubernetes_manifest" "gateway" {
     metadata = {
       name      = "perchguard"
       namespace = "perchguard"
-      annotations = {
-        "alb.ingress.kubernetes.io/scheme"      = "internet-facing"
-        "alb.ingress.kubernetes.io/target-type" = "ip"
-      }
     }
     spec = {
       gatewayClassName = "alb"
