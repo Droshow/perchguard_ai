@@ -128,7 +128,7 @@ func TestPIIBiometricValidator_Disabled(t *testing.T) {
 	}
 	output := "123-45-6789"
 	req := &admission.ToolCallAdmissionRequest{
-		ToolCall: admission.ToolCall{Parameters: map[string]any{"face_embedding": "x"}},
+		ToolCall:   admission.ToolCall{Parameters: map[string]any{"face_embedding": "x"}},
 		ToolOutput: &output,
 	}
 	if viol := v.Validate(context.Background(), req); viol != nil {

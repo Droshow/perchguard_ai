@@ -95,9 +95,9 @@ var tools = []toolDef{
 		InputSchema: inputSchema{
 			Type: "object",
 			Properties: map[string]property{
-				"to":      {Type: "string", Description: "Recipient email or internal specialist code"},
+				"to":         {Type: "string", Description: "Recipient email or internal specialist code"},
 				"patient_id": {Type: "string", Description: "Patient being referred"},
-				"notes":   {Type: "string", Description: "Referral notes"},
+				"notes":      {Type: "string", Description: "Referral notes"},
 			},
 			Required: []string{"to", "patient_id", "notes"},
 		},
@@ -119,9 +119,9 @@ var tools = []toolDef{
 		InputSchema: inputSchema{
 			Type: "object",
 			Properties: map[string]property{
-				"patient_id":  {Type: "string", Description: "Patient identifier"},
-				"medication":  {Type: "string", Description: "Medication name and dose"},
-				"action":      {Type: "string", Description: "add | remove | modify"},
+				"patient_id": {Type: "string", Description: "Patient identifier"},
+				"medication": {Type: "string", Description: "Medication name and dose"},
+				"action":     {Type: "string", Description: "add | remove | modify"},
 			},
 			Required: []string{"patient_id", "medication", "action"},
 		},

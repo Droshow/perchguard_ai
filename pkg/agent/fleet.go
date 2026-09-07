@@ -62,10 +62,10 @@ type VelocityAnomalyConfig struct {
 // its per-session SessionAgent. It owns the session lifecycle: create on first
 // call, evict on TERMINATE (not yet implemented — placeholder for Phase 4).
 type FleetManager struct {
-	mu      sync.RWMutex
-	agents  map[string]*SessionAgent
-	store   store.SessionStore
-	cfg     AgentFleetConfig
+	mu     sync.RWMutex
+	agents map[string]*SessionAgent
+	store  store.SessionStore
+	cfg    AgentFleetConfig
 }
 
 // NewFleetManager creates a FleetManager backed by the given SessionStore.

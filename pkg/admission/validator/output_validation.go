@@ -23,8 +23,8 @@ func NewOutputValidator(p policy.OutputValidationPolicy) *OutputValidator {
 	return &OutputValidator{policy: p}
 }
 
-func (v *OutputValidator) Name() string      { return "output_validation" }
-func (v *OutputValidator) IsOutbound() bool  { return true }
+func (v *OutputValidator) Name() string     { return "output_validation" }
+func (v *OutputValidator) IsOutbound() bool { return true }
 
 func (v *OutputValidator) Validate(ctx context.Context, req *admission.ToolCallAdmissionRequest) *admission.PolicyViolation {
 	if !v.policy.Enabled || req.ToolOutput == nil {

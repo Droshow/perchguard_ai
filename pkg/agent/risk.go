@@ -23,7 +23,6 @@ type RiskAccumulator struct {
 	score float64
 }
 
-
 // Add incorporates a risk signal, clamping the total to 1.0.
 func (r *RiskAccumulator) Add(signal RiskSignal) {
 	r.mu.Lock()

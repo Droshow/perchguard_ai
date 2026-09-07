@@ -81,8 +81,14 @@ Agent endpoints (`/intercept`, `/validate/output`, `/agents/register`) are unaut
 | 5 | Adversarial validation | Shipped |
 | 6 | Open source polish | Shipped |
 | 7 | Productization | In progress |
+| 10a/10b | K8s-native isolation operator | **Current priority** |
+| 11 | Multi-agent delegation showcase (LangGraph) | Approved, deprioritized behind Phase 10 |
 
-See `artifacts/docs/PHASE5-ADVERSARIAL-VALIDATION.md` and `PHASE6-OPEN-SOURCE-POLISH.md`.
+See `artifacts/docs/PHASE5-ADVERSARIAL-VALIDATION.md`, `PHASE6-OPEN-SOURCE-POLISH.md`, and
+`PHASE10-K8S-ISOLATION-OPERATOR.md` ("Why this is priority #1") for the current sequencing
+rationale — this project is a platform-engineering/agentic-systems portfolio showcase,
+not a competing governance SaaS product, which is why Phase 10 (verifiable infra work)
+outranks Phase 11 (app-layer framework integration).
 
 ## Key env vars
 

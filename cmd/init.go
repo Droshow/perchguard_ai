@@ -20,6 +20,8 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+
+	"github.com/Droshow/PerchGuard/perchguard/pkg/envutil"
 )
 
 // claudeSettings is the schema of ~/.claude/settings.json relevant to hooks.
@@ -30,8 +32,8 @@ type claudeSettings struct {
 }
 
 type hookMatcher struct {
-	Matcher string     `json:"matcher"`
-	Hooks   []hookDef  `json:"hooks"`
+	Matcher string    `json:"matcher"`
+	Hooks   []hookDef `json:"hooks"`
 }
 
 type hookDef struct {
@@ -345,7 +347,7 @@ func printInitBanner(pgBin, apiKey, projectHint string, claudeCodeFound bool) {
 		fmt.Println(pad("project:", projectHint))
 	}
 	fmt.Println(pad("api key:", apiKey))
-	fmt.Println(pad("policy:", getEnv("PERCHGUARD_POLICY", "configs/policies.yaml (default)")))
+	fmt.Println(pad("policy:", envutil.GetEnv("PERCHGUARD_POLICY", "configs/policies.yaml (default)")))
 	fmt.Println(pad("dashboard:", "http://localhost:8080"))
 	fmt.Println(pad("metrics:", "http://localhost:8080/metrics"))
 	fmt.Println(bar)

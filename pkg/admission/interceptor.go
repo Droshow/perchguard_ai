@@ -1,7 +1,8 @@
 // Package admission is the core of PerchGuard's agentic admission control.
 //
 // Pipeline:  Request → [Quota Check] → [Validation] → [Mutation] → Decision
-//            Output  → [Outbound Validation] → Decision (with sanitized output)
+//
+//	Output  → [Outbound Validation] → Decision (with sanitized output)
 package admission
 
 import (

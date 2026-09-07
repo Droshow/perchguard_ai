@@ -119,7 +119,7 @@ func TestValidateScope_ValidSubset(t *testing.T) {
 		policy.AgentRole{Role: "admin", AllowedTools: []string{"read_file", "write_file", "exec"}},
 		policy.AgentRole{Role: "reader", AllowedTools: []string{"read_file"}},
 	)
-	child := makeManifest("reader")  // {read_file} ⊆ {read_file, write_file, exec}
+	child := makeManifest("reader") // {read_file} ⊆ {read_file, write_file, exec}
 	parent := makeManifest("admin")
 	if err := ValidateScope(child, parent, cfg); err != nil {
 		t.Errorf("want nil for valid subset, got %v", err)
@@ -131,7 +131,7 @@ func TestValidateScope_InvalidSuperset(t *testing.T) {
 		policy.AgentRole{Role: "reader", AllowedTools: []string{"read_file"}},
 		policy.AgentRole{Role: "writer", AllowedTools: []string{"read_file", "write_file"}},
 	)
-	child := makeManifest("writer")  // write_file not in parent's {read_file}
+	child := makeManifest("writer") // write_file not in parent's {read_file}
 	parent := makeManifest("reader")
 	if err := ValidateScope(child, parent, cfg); err == nil {
 		t.Error("want error when child has tools beyond parent scope, got nil")

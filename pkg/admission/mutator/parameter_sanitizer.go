@@ -1,9 +1,10 @@
 // Package mutator contains PerchGuard's mutation steps.
 //
 // Analogy to EKS-BankingKube:
-//   mutatePod() / applyBaselineSecurity() in webhook.go
-//   → These mutators transform tool call parameters to be safer,
-//     just as applyBaselineSecurity() adds runAsNonRoot, drops CAP_SYS_ADMIN, etc.
+//
+//	mutatePod() / applyBaselineSecurity() in webhook.go
+//	→ These mutators transform tool call parameters to be safer,
+//	  just as applyBaselineSecurity() adds runAsNonRoot, drops CAP_SYS_ADMIN, etc.
 //
 // Key insight: Mutation is the "Safety Net" - the agent's request is mostly fine
 // but needs a nudge. We don't block, we transform.
@@ -21,9 +22,10 @@ import (
 // ParameterSanitizer applies safe transformations to tool call parameters.
 //
 // Examples:
-//   "rm -rf /tmp/build"     → "rm -rf /tmp/build --dry-run"  (inject dry-run)
-//   "git push --force main" → "git push main"                 (strip --force)
-//   "bash:rm -rf /"         → DENY (caught by validator first, but belt-and-suspenders)
+//
+//	"rm -rf /tmp/build"     → "rm -rf /tmp/build --dry-run"  (inject dry-run)
+//	"git push --force main" → "git push main"                 (strip --force)
+//	"bash:rm -rf /"         → DENY (caught by validator first, but belt-and-suspenders)
 //
 // Mirrors: applyBaselineSecurity() which adds runAsNonRoot, drops CAP_SYS_ADMIN.
 type ParameterSanitizer struct {
@@ -126,9 +128,10 @@ func commandContainsAny(cmd string, patterns []string) bool {
 // LeastPrivilegeMutator enforces scope constraints on tool call parameters.
 //
 // Examples:
-//   SQL: "SELECT * FROM accounts" → "SELECT * FROM accounts WHERE user_id = 'u123'"
-//   File: write_file("/etc/passwd") → DENY (validator catches this, but also scoped here)
-//   File: write_file("../../secrets") → normalized to "/workspace/secrets"
+//
+//	SQL: "SELECT * FROM accounts" → "SELECT * FROM accounts WHERE user_id = 'u123'"
+//	File: write_file("/etc/passwd") → DENY (validator catches this, but also scoped here)
+//	File: write_file("../../secrets") → normalized to "/workspace/secrets"
 //
 // Mirrors: how applyBaselineSecurity() enforces readOnlyRootFilesystem, drops capabilities.
 type LeastPrivilegeMutator struct {

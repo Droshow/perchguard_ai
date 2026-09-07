@@ -10,11 +10,11 @@ import (
 
 func TestParameterSanitizer(t *testing.T) {
 	tests := []struct {
-		name        string
-		policy      policy.ParameterSanitizationPolicy
-		params      map[string]any
+		name          string
+		policy        policy.ParameterSanitizationPolicy
+		params        map[string]any
 		wantNilResult bool
-		wantCommand string // non-empty: check params["command"]
+		wantCommand   string // non-empty: check params["command"]
 	}{
 		{
 			name: "clean params pass through unchanged",
@@ -84,12 +84,12 @@ func TestParameterSanitizer(t *testing.T) {
 
 func TestLeastPrivilegeMutator(t *testing.T) {
 	tests := []struct {
-		name        string
-		policy      policy.LeastPrivilegePolicy
-		params      map[string]any
-		metadata    map[string]string
-		wantErr     bool
-		wantNilResult bool
+		name              string
+		policy            policy.LeastPrivilegePolicy
+		params            map[string]any
+		metadata          map[string]string
+		wantErr           bool
+		wantNilResult     bool
 		wantQueryContains string
 	}{
 		{
@@ -116,12 +116,12 @@ func TestLeastPrivilegeMutator(t *testing.T) {
 		{
 			name: "SQL WHERE clause injected",
 			policy: policy.LeastPrivilegePolicy{
-				Enabled: true,
+				Enabled:      true,
 				SQLInjection: policy.SQLPrivPolicy{AutoAppendWhereClause: true},
 			},
-			params:   map[string]any{"query": "SELECT * FROM accounts"},
-			metadata: map[string]string{"user_id": "u123"},
-			wantNilResult: false,
+			params:            map[string]any{"query": "SELECT * FROM accounts"},
+			metadata:          map[string]string{"user_id": "u123"},
+			wantNilResult:     false,
 			wantQueryContains: "WHERE user_id = 'u123'",
 		},
 		{

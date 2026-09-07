@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: perchguard-operator
+  namespace: perchguard
+  labels:
+    app.kubernetes.io/name: perchguard-operator
+
+---
+# Namespaced Role — policy config only, same scoped-by-resourceNames pattern as
+# deployments/k3s/rbac.yaml's controller Role (single named ConfigMap, not
+# cluster-wide configmap access).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: perchguard-operator
+  namespace: perchguard
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["perchguard-policies"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: perchguard-operator
+  namespace: perchguard
+subjects:
+  - kind: ServiceAccount
+    name: perchguard-operator
+    namespace: perchguard
+roleRef:
+  kind: Role
+  name: perchguard-operator
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole — the operator's actual job: CRUD the singleton AgentIsolationPolicy
+# (PolicyTranslator.Reconcile), list namespaces to evaluate spec.workloadSelector
+# (not the webhook RBAC's lab-only admission-context widening — this namespace
+# list/watch is core to what this controller does), and apply the coarse
+# NetworkPolicy (PolicyTranslator) / CiliumNetworkPolicy (IsolationEnforcer, Phase
+# 10c — only ever writes when spec.mode is Enforce) this phase generates. Both
+# policy-kind grants are cluster-wide because the matched namespace set is only
+# known at reconcile time from the selector, so neither can be scoped to fixed
+# resourceNames the way the controller's ConfigMap/Secret access is. The
+# ciliumnetworkpolicies rule is harmless on a k3s dev cluster without Cilium
+# installed — IsolationEnforcer only lists/patches when spec.mode == Enforce,
+# which stays Observe by default everywhere.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: perchguard-operator
+  labels:
+    app.kubernetes.io/name: perchguard-operator
+rules:
+  - apiGroups: ["security.perchguard.io"]
+    resources: ["agentisolationpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["security.perchguard.io"]
+    resources: ["agentisolationpolicies/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["cilium.io"]
+    resources: ["ciliumnetworkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: perchguard-operator
+subjects:
+  - kind: ServiceAccount
+    name: perchguard-operator
+    namespace: perchguard
+roleRef:
+  kind: ClusterRole
+  name: perchguard-operator
+  apiGroup: rbac.authorization.k8s.io

@@ -28,10 +28,10 @@ func ptr(s string) *string { return &s }
 
 func TestOutputValidator_Validate(t *testing.T) {
 	tests := []struct {
-		name      string
-		output    *string
-		wantViol  bool
-		wantSev   string
+		name     string
+		output   *string
+		wantViol bool
+		wantSev  string
 	}{
 		{
 			name:   "nil output — inbound path skip",
@@ -89,11 +89,11 @@ func TestOutputValidator_Disabled(t *testing.T) {
 
 func TestOutputValidator_SanitizeOutput(t *testing.T) {
 	tests := []struct {
-		name     string
-		mode     string
-		input    string
-		wantSub  string
-		wantNot  string
+		name    string
+		mode    string
+		input   string
+		wantSub string
+		wantNot string
 	}{
 		{
 			name:    "redact mode",

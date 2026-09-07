@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perchguard-operator
+  namespace: perchguard
+  labels:
+    app.kubernetes.io/name: perchguard-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perchguard-operator
+  template:
+    metadata:
+      labels:
+        app: perchguard-operator
+        app.kubernetes.io/name: perchguard-operator
+    spec:
+      serviceAccountName: perchguard-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534      # nobody
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: perchguard-operator
+          image: perchguard-operator:latest
+          imagePullPolicy: IfNotPresent  # use local image in K3s dev
+          ports:
+            - name: probes
+              containerPort: 8081
+          env:
+            - name: PERCHGUARD_POLICY
+              value: /etc/perchguard/policies.yaml
+            - name: PERCHGUARD_METRICS_ADDR
+              value: ":8081"
+          volumeMounts:
+            - name: policies
+              mountPath: /etc/perchguard
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: policies
+          configMap:
+            name: perchguard-policies

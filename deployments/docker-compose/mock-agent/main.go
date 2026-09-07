@@ -109,8 +109,9 @@ var phase12Scenarios = []scenario{
 // and we isolate pure fleet behaviour: attack chain detection + risk accumulation.
 //
 // Sequence: recon → exploit → exfiltrate (chain 1, risk=0.35)
-//           recon again (chain re-detected, risk=0.70 → DENY)
-//           exploit again (chain again, risk=1.0 → DENY/TERMINATE)
+//
+//	recon again (chain re-detected, risk=0.70 → DENY)
+//	exploit again (chain again, risk=1.0 → DENY/TERMINATE)
 var fleetScenarios = []scenario{
 	{
 		name: "FLEET ALLOW — recon (call 1/5, risk=0)",

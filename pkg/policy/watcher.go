@@ -11,7 +11,7 @@ import (
 // LoadResult wraps a parsed Config with file metadata needed for hot reload and API inspection.
 type LoadResult struct {
 	Config   *Config
-	Hash     string    // first 8 bytes of SHA-256 of raw YAML, hex-encoded (16 chars)
+	Hash     string // first 8 bytes of SHA-256 of raw YAML, hex-encoded (16 chars)
 	LoadedAt time.Time
 	Path     string
 }

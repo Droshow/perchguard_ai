@@ -15,9 +15,9 @@ type Config struct {
 	// "observe" — full pipeline runs but every decision is overridden to ALLOW;
 	//             the original decision is preserved in the audit record.
 	// "enforce" — normal blocking behaviour (default).
-	Enforcement string         `yaml:"enforcement"`
+	Enforcement string          `yaml:"enforcement"`
 	Admission   AdmissionPolicy `yaml:"admission"`
-	Policies    Policies       `yaml:"policies"`
+	Policies    Policies        `yaml:"policies"`
 }
 
 // AdmissionPolicy holds the top-level admission thresholds and dual-approval
@@ -31,19 +31,19 @@ type AdmissionPolicy struct {
 }
 
 type Policies struct {
-	PromptInjection      PromptInjectionPolicy      `yaml:"promptInjection"`
-	SemanticFirewall     SemanticFirewallPolicy     `yaml:"semanticFirewall"`
-	ToolAuthorization    ToolAuthorizationPolicy    `yaml:"toolAuthorization"`
-	DataExfiltration     DataExfiltrationPolicy     `yaml:"dataExfiltration"`
+	PromptInjection       PromptInjectionPolicy       `yaml:"promptInjection"`
+	SemanticFirewall      SemanticFirewallPolicy      `yaml:"semanticFirewall"`
+	ToolAuthorization     ToolAuthorizationPolicy     `yaml:"toolAuthorization"`
+	DataExfiltration      DataExfiltrationPolicy      `yaml:"dataExfiltration"`
 	ParameterSanitization ParameterSanitizationPolicy `yaml:"parameterSanitization"`
-	LeastPrivilege       LeastPrivilegePolicy       `yaml:"leastPrivilege"`
-	SessionBudget        SessionBudgetPolicy        `yaml:"sessionBudget"`
-	DepthLimiter         DepthLimiterPolicy         `yaml:"depthLimiter"`
-	OutputValidation     OutputValidationPolicy     `yaml:"outputValidation"`
-	PIIBiometric         PIIBiometricPolicy         `yaml:"piiBiometric"`
-	HumanReview          HumanReviewPolicy          `yaml:"humanReview"`
-	Audit                AuditPolicy                `yaml:"audit"`
-	AgentFleet           AgentFleetPolicy           `yaml:"agentFleet"`
+	LeastPrivilege        LeastPrivilegePolicy        `yaml:"leastPrivilege"`
+	SessionBudget         SessionBudgetPolicy         `yaml:"sessionBudget"`
+	DepthLimiter          DepthLimiterPolicy          `yaml:"depthLimiter"`
+	OutputValidation      OutputValidationPolicy      `yaml:"outputValidation"`
+	PIIBiometric          PIIBiometricPolicy          `yaml:"piiBiometric"`
+	HumanReview           HumanReviewPolicy           `yaml:"humanReview"`
+	Audit                 AuditPolicy                 `yaml:"audit"`
+	AgentFleet            AgentFleetPolicy            `yaml:"agentFleet"`
 }
 
 // AgentFleetPolicy configures the Phase 3 session-aware agent fleet validator.
@@ -123,6 +123,13 @@ type DataExfiltrationPolicy struct {
 	BlockedDestinations      []string `yaml:"blockedDestinations"`
 	BlockUnknownDestinations bool     `yaml:"blockUnknownDestinations"`
 	Action                   string   `yaml:"action"`
+
+	// AllowedPorts is consumed by the K8s operator (pkg/operator/render) to generate
+	// a coarse default-deny-egress NetworkPolicy — ports allowed to any destination,
+	// since plain NetworkPolicy can't match the hostnames above (that needs Cilium
+	// FQDN rules, Phase 10c). Not used by this validator. Defaults to [443, 80] when
+	// empty — see pkg/operator/render.
+	AllowedPorts []int `yaml:"allowedPorts"`
 }
 
 // --- Mutation Layer ---
@@ -133,12 +140,12 @@ type ParameterSanitizationPolicy struct {
 }
 
 type SanitizationRule struct {
-	Match          string   `yaml:"match"`
-	ContainsAny    []string `yaml:"containsAny"`
-	Inject         string   `yaml:"inject"`
-	Unless         string   `yaml:"unless"`
-	StripFlags     []string `yaml:"stripFlags"`
-	EnforceReadOnly bool    `yaml:"enforceReadOnly"`
+	Match           string   `yaml:"match"`
+	ContainsAny     []string `yaml:"containsAny"`
+	Inject          string   `yaml:"inject"`
+	Unless          string   `yaml:"unless"`
+	StripFlags      []string `yaml:"stripFlags"`
+	EnforceReadOnly bool     `yaml:"enforceReadOnly"`
 }
 
 type LeastPrivilegePolicy struct {
@@ -153,18 +160,18 @@ type SQLPrivPolicy struct {
 }
 
 type FilePrivPolicy struct {
-	AllowedBasePaths    []string `yaml:"allowedBasePaths"`
-	BlockAbsolutePaths  bool     `yaml:"blockAbsolutePaths"`
-	BlockPathTraversal  bool     `yaml:"blockPathTraversal"`
+	AllowedBasePaths   []string `yaml:"allowedBasePaths"`
+	BlockAbsolutePaths bool     `yaml:"blockAbsolutePaths"`
+	BlockPathTraversal bool     `yaml:"blockPathTraversal"`
 }
 
 // --- Quota Layer ---
 
 type SessionBudgetPolicy struct {
-	Enabled            bool               `yaml:"enabled"`
-	Limits             BudgetLimits       `yaml:"limits"`
-	Action             string             `yaml:"action"`
-	Anomaly            BudgetAnomalyConfig `yaml:"anomaly"`
+	Enabled bool                `yaml:"enabled"`
+	Limits  BudgetLimits        `yaml:"limits"`
+	Action  string              `yaml:"action"`
+	Anomaly BudgetAnomalyConfig `yaml:"anomaly"`
 	// DelegationFraction is the fraction of the parent's MaxToolCallsPerSession
 	// granted to a child session at registration. 0.5 = child gets 50% of parent's limit.
 	// Zero disables budget inheritance — child uses the policy default.
@@ -227,12 +234,12 @@ type PIIBiometricPolicy struct {
 
 // HumanReviewPolicy configures the human-in-loop webhook dispatcher.
 type HumanReviewPolicy struct {
-	Enabled           bool   `yaml:"enabled"`
-	WebhookURL        string `yaml:"webhookURL"`
-	TimeoutSeconds    int    `yaml:"timeoutSeconds"`
-	AutoDenyOnTimeout bool   `yaml:"autoDenyOnTimeout"`
-	StatusPollURL     string `yaml:"statusPollURL,omitempty"`
-	StatusPollIntervalMs int `yaml:"statusPollIntervalMs,omitempty"`
+	Enabled              bool   `yaml:"enabled"`
+	WebhookURL           string `yaml:"webhookURL"`
+	TimeoutSeconds       int    `yaml:"timeoutSeconds"`
+	AutoDenyOnTimeout    bool   `yaml:"autoDenyOnTimeout"`
+	StatusPollURL        string `yaml:"statusPollURL,omitempty"`
+	StatusPollIntervalMs int    `yaml:"statusPollIntervalMs,omitempty"`
 }
 
 // --- Audit ---

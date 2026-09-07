@@ -1,17 +1,19 @@
 // Package store — SQLiteAuditSink provides durable persistence for admission decisions.
 //
 // Architecture position:
-//   AuditRingBuffer  — in-memory, fast; serves the live /api/audit dashboard queries.
-//   JSONL sink       — append-only forensic log; survives restarts as a flat file.
-//   SQLiteAuditSink  — structured, queryable, survives restarts; this file.
+//
+//	AuditRingBuffer  — in-memory, fast; serves the live /api/audit dashboard queries.
+//	JSONL sink       — append-only forensic log; survives restarts as a flat file.
+//	SQLiteAuditSink  — structured, queryable, survives restarts; this file.
 //
 // The three are independent push targets wired together via SetPushHook chains in
 // cmd/main.go and cmd/claude_hook.go. Any of them can be absent without breaking the
 // others.
 //
 // Schema:
-//   sessions  — one row per governed agent session; risk score updated on each decision.
-//   decisions — one row per admission decision; includes HITL approval fields.
+//
+//	sessions  — one row per governed agent session; risk score updated on each decision.
+//	decisions — one row per admission decision; includes HITL approval fields.
 //
 // In-process hook writes to the same DB file as the server. When the server starts
 // later it reads the hook's history with no sync required.

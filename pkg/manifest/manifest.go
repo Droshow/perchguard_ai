@@ -19,7 +19,7 @@ type AgentManifest struct {
 	Mission        Mission           `yaml:"mission"           json:"mission"`
 	Authorization  Authorization     `yaml:"authorization"     json:"authorization"`
 	Invariants     []string          `yaml:"invariants"        json:"invariants"`
-	ProjectContext ProjectContextRef  `yaml:"project_context"   json:"project_context"`
+	ProjectContext ProjectContextRef `yaml:"project_context"   json:"project_context"`
 	// ParentSessionID links this agent to its governing parent session.
 	// When set, PerchGuard validates that this agent's tool scope is a subset of
 	// the parent's and records the delegation chain for fleet visibility.

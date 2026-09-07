@@ -17,12 +17,12 @@ type AuditRecord struct {
 	Reason        string    `json:"reason"`
 	Timestamp     time.Time `json:"timestamp"`
 	DurationMs    int64     `json:"duration_ms"`
-	RiskScore     float64  `json:"risk_score"`     // cumulative session risk at the moment of this decision
-	Registered    bool     `json:"registered"`     // false when no valid agent token was presented
-	PolicyVersion string   `json:"policy_version"` // sha256[:8] of policies.yaml at decision time
-	DataRefsIn    []string `json:"data_refs_in,omitempty"`
-	DataRefOut    string   `json:"data_ref_out,omitempty"`
-	DriftScore    *float64 `json:"drift_score,omitempty"` // intent drift for this call; nil when no fleet validator scored it
+	RiskScore     float64   `json:"risk_score"`     // cumulative session risk at the moment of this decision
+	Registered    bool      `json:"registered"`     // false when no valid agent token was presented
+	PolicyVersion string    `json:"policy_version"` // sha256[:8] of policies.yaml at decision time
+	DataRefsIn    []string  `json:"data_refs_in,omitempty"`
+	DataRefOut    string    `json:"data_ref_out,omitempty"`
+	DriftScore    *float64  `json:"drift_score,omitempty"` // intent drift for this call; nil when no fleet validator scored it
 
 	// HITL review outcome, populated by SQLiteAuditSink.MarkReviewed after the fact.
 	// Empty/nil until an operator acts on a HUMAN_REVIEW decision.

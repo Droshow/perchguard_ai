@@ -1,30 +1,32 @@
 // PerchGuard - Agentic Admission Controller
 //
 // Modes:
-//   server (default) — HTTP admission proxy for autonomous agents
-//   mcp-proxy        — MCP JSON-RPC proxy (intercepts tools/call)
-//   copilot          — MCP proxy pre-loaded with copilot-profile.yaml (cost control focus)
-//   watch            — terminal fleet dashboard
-//   meter            — terminal budget meter (per-session cost / token / call tracking)
-//   claude-hook      — Claude Code PreToolUse/PostToolUse hook subprocess
-//   init             — register Claude Code hooks + print setup status
-//   compliance       — export a regime-shaped compliance report from the audit store
+//
+//	server (default) — HTTP admission proxy for autonomous agents
+//	mcp-proxy        — MCP JSON-RPC proxy (intercepts tools/call)
+//	copilot          — MCP proxy pre-loaded with copilot-profile.yaml (cost control focus)
+//	watch            — terminal fleet dashboard
+//	meter            — terminal budget meter (per-session cost / token / call tracking)
+//	claude-hook      — Claude Code PreToolUse/PostToolUse hook subprocess
+//	init             — register Claude Code hooks + print setup status
+//	compliance       — export a regime-shaped compliance report from the audit store
 //
 // Run: go run cmd/main.go [--mode=server|mcp-proxy|copilot|wrap|watch|meter|claude-hook|init|compliance]
 // Env: PERCHGUARD_POLICY          ./configs/policies.yaml
-//      PERCHGUARD_ADDR             :8080
-//      PERCHGUARD_API_KEY          (Bearer key for /api/* endpoints; auto-generated and logged if unset)
-//      PERCHGUARD_LLM_API_KEY      (Anthropic key, required if semanticFirewall.enabled)
-//      PERCHGUARD_LLM_MODEL        claude-haiku-4-5
-//      PERCHGUARD_MCP_UPSTREAM     (URL of upstream MCP server, required in mcp-proxy/copilot mode)
-//      PERCHGUARD_MCP_TRANSPORT    stdio (default) | http
-//      PERCHGUARD_AGENT_ID         mcp-proxy
-//      PERCHGUARD_AGENT_ROLE       developer_agent
-//      PERCHGUARD_GOVERNED_MODEL   (model Copilot is using; drives cost estimation in copilot/mcp-proxy mode)
-//      PERCHGUARD_DASHBOARD_ADDR   :8081 (browser dashboard in copilot mode; set to "" to disable)
-//      PERCHGUARD_TLS_CERT         (path to TLS cert, enables HTTPS)
-//      PERCHGUARD_TLS_KEY          (path to TLS key)
-//      PERCHGUARD_CONTEXT_ROOT     (path to project context root; enables context enrichment + local sink)
+//
+//	PERCHGUARD_ADDR             :8080
+//	PERCHGUARD_API_KEY          (Bearer key for /api/* endpoints; auto-generated and logged if unset)
+//	PERCHGUARD_LLM_API_KEY      (Anthropic key, required if semanticFirewall.enabled)
+//	PERCHGUARD_LLM_MODEL        claude-haiku-4-5
+//	PERCHGUARD_MCP_UPSTREAM     (URL of upstream MCP server, required in mcp-proxy/copilot mode)
+//	PERCHGUARD_MCP_TRANSPORT    stdio (default) | http
+//	PERCHGUARD_AGENT_ID         mcp-proxy
+//	PERCHGUARD_AGENT_ROLE       developer_agent
+//	PERCHGUARD_GOVERNED_MODEL   (model Copilot is using; drives cost estimation in copilot/mcp-proxy mode)
+//	PERCHGUARD_DASHBOARD_ADDR   :8081 (browser dashboard in copilot mode; set to "" to disable)
+//	PERCHGUARD_TLS_CERT         (path to TLS cert, enables HTTPS)
+//	PERCHGUARD_TLS_KEY          (path to TLS key)
+//	PERCHGUARD_CONTEXT_ROOT     (path to project context root; enables context enrichment + local sink)
 package main
 
 import (
@@ -52,9 +54,10 @@ import (
 	"github.com/Droshow/PerchGuard/perchguard/pkg/agent"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/api"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/audit"
-	"github.com/Droshow/PerchGuard/perchguard/pkg/localfs"
+	"github.com/Droshow/PerchGuard/perchguard/pkg/envutil"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/humanreview"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/llm"
+	"github.com/Droshow/PerchGuard/perchguard/pkg/localfs"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/manifest"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/mcp"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/pii"
@@ -65,17 +68,17 @@ import (
 
 func main() {
 	mode := flag.String("mode", "server", "Operating mode: server | mcp-proxy | copilot | wrap | watch | meter | claude-hook | init | compliance")
-	mcpConfig  := flag.String("mcp-config", "", "Path to .vscode/mcp.json (wrap mode). Auto-discovered if empty.")
-	postHook   := flag.Bool("post", false, "PostToolUse path for claude-hook mode")
+	mcpConfig := flag.String("mcp-config", "", "Path to .vscode/mcp.json (wrap mode). Auto-discovered if empty.")
+	postHook := flag.Bool("post", false, "PostToolUse path for claude-hook mode")
 	initProfile := flag.String("profile", "", "Policy profile name for init mode (e.g. open-banking)")
-	uninstall  := flag.Bool("uninstall", false, "Remove PerchGuard hooks (init mode)")
+	uninstall := flag.Bool("uninstall", false, "Remove PerchGuard hooks (init mode)")
 
 	// watch / meter mode flags
-	watchAddr     := flag.String("watch-addr", "", "PerchGuard server address to watch/meter (e.g. http://localhost:8080). Env: PERCHGUARD_WATCH_ADDR")
-	watchKey      := flag.String("watch-key", "", "API key for watch/meter mode. Env: PERCHGUARD_API_KEY")
+	watchAddr := flag.String("watch-addr", "", "PerchGuard server address to watch/meter (e.g. http://localhost:8080). Env: PERCHGUARD_WATCH_ADDR")
+	watchKey := flag.String("watch-key", "", "API key for watch/meter mode. Env: PERCHGUARD_API_KEY")
 	watchInterval := flag.Duration("watch-interval", 5*time.Second, "Poll interval for watch/meter mode")
-	meterSession  := flag.String("meter-session", "", "Session ID to display in meter mode. Empty = all active sessions")
-	meterOnce     := flag.Bool("once", false, "Print once and exit (meter mode; useful for shell/tmux status bars)")
+	meterSession := flag.String("meter-session", "", "Session ID to display in meter mode. Empty = all active sessions")
+	meterOnce := flag.Bool("once", false, "Print once and exit (meter mode; useful for shell/tmux status bars)")
 
 	// dashboard flag — copilot mode starts a browser UI on this address
 	dashboardAddr := flag.String("dashboard-addr", "", "Address for the browser dashboard (default :8081 in copilot mode). Env: PERCHGUARD_DASHBOARD_ADDR")
@@ -108,7 +111,7 @@ func main() {
 	if *mode == "compliance" {
 		policyPath := *compliancePolicy
 		if policyPath == "" {
-			policyPath = getEnv("PERCHGUARD_POLICY", "./configs/policies.yaml")
+			policyPath = envutil.GetEnv("PERCHGUARD_POLICY", "./configs/policies.yaml")
 		}
 		dbPath := *complianceDB
 		if dbPath == "" {
@@ -148,7 +151,7 @@ func main() {
 	if *mode == "meter" {
 		addr := *watchAddr
 		if addr == "" {
-			addr = getEnv("PERCHGUARD_WATCH_ADDR", "http://localhost:8080")
+			addr = envutil.GetEnv("PERCHGUARD_WATCH_ADDR", "http://localhost:8080")
 		}
 		key := *watchKey
 		if key == "" {
@@ -168,7 +171,7 @@ func main() {
 	if *mode == "watch" {
 		addr := *watchAddr
 		if addr == "" {
-			addr = getEnv("PERCHGUARD_WATCH_ADDR", "http://localhost:8080")
+			addr = envutil.GetEnv("PERCHGUARD_WATCH_ADDR", "http://localhost:8080")
 		}
 		key := *watchKey
 		if key == "" {
@@ -229,10 +232,10 @@ func main() {
 	)
 
 	// LLM client — shared between the semantic firewall and POST /api/query.
-	llmAPIKey := getEnv("PERCHGUARD_LLM_API_KEY", os.Getenv("ANTHROPIC_API_KEY_USED_BY_PERCHGUARD"))
+	llmAPIKey := envutil.GetEnv("PERCHGUARD_LLM_API_KEY", os.Getenv("ANTHROPIC_API_KEY_USED_BY_PERCHGUARD"))
 	var llmClient llm.Client
 	if llmAPIKey != "" {
-		model := getEnv("PERCHGUARD_LLM_MODEL", cfg.Policies.SemanticFirewall.LLM.Model)
+		model := envutil.GetEnv("PERCHGUARD_LLM_MODEL", cfg.Policies.SemanticFirewall.LLM.Model)
 		if model == "" {
 			model = "claude-haiku-4-5"
 		}
@@ -274,7 +277,7 @@ func main() {
 	var contextProvider audit.ContextProvider = audit.NoOpContextProvider{}
 	var auditSink audit.Sink
 
-	fsReader := localfs.NewReader(getEnv("PERCHGUARD_CONTEXT_ROOT", ""))
+	fsReader := localfs.NewReader(envutil.GetEnv("PERCHGUARD_CONTEXT_ROOT", ""))
 	if fsReader.Root() != "" {
 		contextProvider = fsReader
 		auditSink = localfs.NewWriter(fsReader.Root())
@@ -378,7 +381,7 @@ func main() {
 	}
 
 	// Loki log shipping — optional, non-blocking, fails silently if Loki is not running.
-	if lokiEndpoint := getEnv("PERCHGUARD_LOKI_ENDPOINT", ""); lokiEndpoint != "" {
+	if lokiEndpoint := envutil.GetEnv("PERCHGUARD_LOKI_ENDPOINT", ""); lokiEndpoint != "" {
 		lokiSink := store.NewLokiSink(lokiEndpoint)
 		existing := auditRing.PushHook()
 		auditRing.SetPushHook(func(rec store.AuditRecord) {
@@ -393,7 +396,7 @@ func main() {
 	// SQLite durable audit store — persists all decisions across restarts.
 	// The hook's in-process mode writes to the same file; server picks them up on start.
 	var sqliteSink *store.SQLiteAuditSink
-	dbPath := getEnv("PERCHGUARD_DB_PATH", store.DefaultDBPath())
+	dbPath := envutil.GetEnv("PERCHGUARD_DB_PATH", store.DefaultDBPath())
 	if s, err := store.NewSQLiteAuditSink(dbPath); err != nil {
 		log.Printf("[perchguard] SQLite audit store unavailable: %v", err)
 	} else {
@@ -439,12 +442,12 @@ func main() {
 	// browser dashboard. Neither mode uses the autonomous-agent fleet or
 	// the full /api/* management surface.
 	case "mcp-proxy", "copilot":
-		governedModel := getEnv("PERCHGUARD_GOVERNED_MODEL", "")
+		governedModel := envutil.GetEnv("PERCHGUARD_GOVERNED_MODEL", "")
 
 		// Start browser dashboard alongside the MCP proxy.
 		dashAddr := *dashboardAddr
 		if dashAddr == "" {
-			dashAddr = getEnv("PERCHGUARD_DASHBOARD_ADDR", "")
+			dashAddr = envutil.GetEnv("PERCHGUARD_DASHBOARD_ADDR", "")
 		}
 		if dashAddr == "" && *mode == "copilot" {
 			dashAddr = ":8081"
@@ -545,7 +548,7 @@ func buildPipelineSlices(cfg *policy.Config, llmClient llm.Client, fleetMgr *age
 }
 
 func runServer(interceptor *admission.Interceptor, apiServer *api.APIServer) {
-	addr := getEnv("PERCHGUARD_ADDR", ":8080")
+	addr := envutil.GetEnv("PERCHGUARD_ADDR", ":8080")
 	certFile := os.Getenv("PERCHGUARD_TLS_CERT")
 	keyFile := os.Getenv("PERCHGUARD_TLS_KEY")
 
@@ -562,12 +565,12 @@ func runServer(interceptor *admission.Interceptor, apiServer *api.APIServer) {
 	// If PERCHGUARD_MCP_UPSTREAM is set, also expose a transparent HTTP MCP proxy at /mcp.
 	if upstreamURL := os.Getenv("PERCHGUARD_MCP_UPSTREAM"); upstreamURL != "" {
 		httpProxy := mcp.NewProxy(interceptor, mcp.NewHTTPTransport(upstreamURL), nil,
-			mcp.WithAgentRole(getEnv("PERCHGUARD_AGENT_ROLE", "developer_agent")),
-			mcp.WithAgentID(getEnv("PERCHGUARD_AGENT_ID", "mcp-proxy")),
+			mcp.WithAgentRole(envutil.GetEnv("PERCHGUARD_AGENT_ROLE", "developer_agent")),
+			mcp.WithAgentID(envutil.GetEnv("PERCHGUARD_AGENT_ID", "mcp-proxy")),
 		)
 		mux.Handle("/mcp", httpProxy)
 		log.Printf("[perchguard] HTTP MCP proxy active at /mcp (upstream=%s role=%s)",
-			upstreamURL, getEnv("PERCHGUARD_AGENT_ROLE", "developer_agent"))
+			upstreamURL, envutil.GetEnv("PERCHGUARD_AGENT_ROLE", "developer_agent"))
 	}
 
 	log.Printf("[perchguard] admission controller listening on %s", addr)
@@ -614,8 +617,8 @@ func runMCPProxy(interceptor *admission.Interceptor, governedModel string) {
 
 	proxyOpts := []mcp.Option{
 		mcp.WithSessionID(fmt.Sprintf("pg-%d", time.Now().UnixNano())),
-		mcp.WithAgentID(getEnv("PERCHGUARD_AGENT_ID", "mcp-proxy")),
-		mcp.WithAgentRole(getEnv("PERCHGUARD_AGENT_ROLE", "developer_agent")),
+		mcp.WithAgentID(envutil.GetEnv("PERCHGUARD_AGENT_ID", "mcp-proxy")),
+		mcp.WithAgentRole(envutil.GetEnv("PERCHGUARD_AGENT_ROLE", "developer_agent")),
 	}
 	if governedModel != "" {
 		proxyOpts = append(proxyOpts, mcp.WithGovernedModel(governedModel))
@@ -625,13 +628,6 @@ func runMCPProxy(interceptor *admission.Interceptor, governedModel string) {
 	if err := proxy.Run(context.Background()); err != nil {
 		log.Fatalf("[perchguard] mcp proxy error: %v", err)
 	}
-}
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 // splitArgs parses PERCHGUARD_UPSTREAM_ARGS into a []string.

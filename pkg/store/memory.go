@@ -17,19 +17,19 @@ type ToolEvent struct {
 
 // SessionState holds the mutable runtime state for one agent session.
 type SessionState struct {
-	SessionID       string
-	ManifestID      string  // set when registered via POST /agents/register
-	ManifestVersion string  // manifest version at registration time
-	IntentBaseline   string   // fused manifest+context text the intent baseline was set from; written once at registration, never mutated
-	IntentPhases     []string // manifest-declared Mission.Phases that seeded additional drift baselines; written once at registration
-	IntentOutOfScope []string // manifest-declared Mission.OutOfScope vocabulary; written once at registration
-	ParentSessionID    string  // non-empty when this is a delegated sub-agent session
-	DelegatedCallLimit int     // >0 overrides policy MaxToolCallsPerSession for this child session
-	RiskScore       float64
-	PeakRiskScore   float64 // highest risk score observed across the session lifetime
-	Events          []ToolEvent
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	SessionID          string
+	ManifestID         string   // set when registered via POST /agents/register
+	ManifestVersion    string   // manifest version at registration time
+	IntentBaseline     string   // fused manifest+context text the intent baseline was set from; written once at registration, never mutated
+	IntentPhases       []string // manifest-declared Mission.Phases that seeded additional drift baselines; written once at registration
+	IntentOutOfScope   []string // manifest-declared Mission.OutOfScope vocabulary; written once at registration
+	ParentSessionID    string   // non-empty when this is a delegated sub-agent session
+	DelegatedCallLimit int      // >0 overrides policy MaxToolCallsPerSession for this child session
+	RiskScore          float64
+	PeakRiskScore      float64 // highest risk score observed across the session lifetime
+	Events             []ToolEvent
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // SessionStore is the minimal persistence interface the fleet uses.

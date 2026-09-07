@@ -43,6 +43,9 @@ Thumbs.db
 /mock-agent
 /redteam-agent
 
+# Artifacts — working papers, not source
+/artifacts/
+
 # Snapshots — runtime output, not source
 /snapshots/*.jsonl
 /snapshots/fleet-history.jsonl
@@ -73,6 +76,9 @@ architecture/docs/EUAIACT_EN_TXT.pdf
 # Internal strategy/spec docs — not for the public repo
 artifacts/docs/NORTH-STAR-AUTONOMOUS-AGENT-GOVERNANCE.md
 artifacts/docs/PHASE9-SESSION-COST-TELEMETRY.md
+artifacts/docs/CAGEBREAK-GPT-INCIDENT-ANALYSIS.md
+artifacts/docs/PHASE10-K8S-ISOLATION-OPERATOR.md
+artifacts/docs/PHASE11-MULTI-AGENT-DELEGATION-SHOWCASE.md
 
 # Terraform
 .terraform/

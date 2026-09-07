@@ -28,7 +28,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name                                        = "${var.cluster_name}-public-${each.key}"
+    Name = "${var.cluster_name}-public-${each.key}"
     # Required for the AWS Load Balancer Controller to discover subnets for public ALBs.
     "kubernetes.io/role/elb"                    = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
@@ -173,6 +173,44 @@ resource "aws_eks_fargate_profile" "kube_system" {
   depends_on = [aws_iam_role_policy_attachment.fargate_pod_execution_policy]
 }
 
+# ─── Agent Workload Node Group (Phase 10c) ────────────────────────────────────
+# Real EC2 nodes, not Fargate — Cilium's DaemonSet (and Kata's containerd shim,
+# later) need a real kubelet. Tainted so only pods with a matching toleration
+# land here; labeled so Cilium's Helm values and each agent Deployment's
+# nodeSelector both key off the same selector.
+
+resource "aws_eks_node_group" "agent_workloads" {
+  cluster_name    = aws_eks_cluster.perchguard.name
+  node_group_name = "agent-workloads"
+  node_role_arn   = aws_iam_role.agent_node_group.arn
+  subnet_ids      = [for s in aws_subnet.private : s.id]
+
+  scaling_config {
+    desired_size = var.agent_node_desired_size
+    min_size     = var.agent_node_desired_size
+    max_size     = max(var.agent_node_desired_size, 2)
+  }
+
+  instance_types = [var.agent_node_instance_type]
+  ami_type       = "AL2_x86_64"
+
+  labels = {
+    "perchguard/workload-class" = "isolated-agent"
+  }
+
+  taint {
+    key    = "perchguard.io/agent-workload"
+    value  = "true"
+    effect = "NO_SCHEDULE"
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.agent_node_worker_policy,
+    aws_iam_role_policy_attachment.agent_node_cni_policy,
+    aws_iam_role_policy_attachment.agent_node_ecr_readonly,
+  ]
+}
+
 # ─── ECR ──────────────────────────────────────────────────────────────────────
 
 resource "aws_ecr_repository" "perchguard" {
@@ -185,4 +223,28 @@ resource "aws_ecr_repository" "perchguard" {
   }
 
   tags = { Name = var.cluster_name }
+}
+
+resource "aws_ecr_repository" "redteam_mcp_agent" {
+  name                 = "${var.cluster_name}-redteam-mcp-agent"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = { Name = "${var.cluster_name}-redteam-mcp-agent" }
+}
+
+resource "aws_ecr_repository" "perchguard_operator" {
+  name                 = "${var.cluster_name}-operator"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = { Name = "${var.cluster_name}-operator" }
 }
