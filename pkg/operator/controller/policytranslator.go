@@ -104,15 +104,38 @@ func (r *PolicyTranslator) SetupWithManager(mgr manager.Manager, triggers <-chan
 // interceptLabelPredicate matches namespaces carrying render.InterceptLabelSelector's
 // labels — the same convention the Fargate/k3s manifests and the webhook's own
 // namespaceSelector already use, so this isn't a second opt-in convention.
+// CRITICAL FIX: must detect both ADD (label added to namespace) and REMOVE
+// (label removed from namespace) events. The old implementation only checked
+// ObjectNew, so label removals were silently dropped: a namespace would keep
+// its NetworkPolicy indefinitely with no error, falsifying the "opt-out works"
+// contract. Now checks both old and new: UpdateFunc returns true if either
+// object has the labels (so a transition from "has labels" → "no labels" still
+// triggers), and CreateFunc/DeleteFunc check only the single object available.
 func interceptLabelPredicate() predicate.Predicate {
-	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
+	hasLabels := func(obj client.Object) bool {
 		for k, v := range render.InterceptLabelSelector.MatchLabels {
 			if obj.GetLabels()[k] != v {
 				return false
 			}
 		}
 		return true
-	})
+	}
+	
+	return predicate.Funcs{
+		CreateFunc: func(ce event.CreateEvent) bool {
+			return hasLabels(ce.Object)
+		},
+		UpdateFunc: func(ue event.UpdateEvent) bool {
+			// Trigger if EITHER old or new has the labels (so label removal still
+			// triggers reconciliation to clean up the policy). If a namespace is
+			// transitioning out of governance, we need the event to fire so deleteStale
+			// can remove its NetworkPolicy.
+			return hasLabels(ue.ObjectOld) || hasLabels(ue.ObjectNew)
+		},
+		DeleteFunc: func(de event.DeleteEvent) bool {
+			return hasLabels(de.Object)
+		},
+	}
 }
 
 // Reconcile loads the current policy, lists namespaces matching

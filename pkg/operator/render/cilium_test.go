@@ -144,3 +144,35 @@ func TestCiliumNetworkPolicy_BlockUnknownFalseAddsCatchAll(t *testing.T) {
 		t.Errorf("catch-all matchPattern = %q, want %q", matchPattern, "*")
 	}
 }
+
+// TestCiliumNetworkPolicy_BareAllowVsBareBlockConflict is the regression test
+// for the security fix: a bare allowed domain (e.g., "hl7.org") gets synthesized
+// as BOTH matchName and matchPattern "*.hl7.org". When checking conflicts against
+// a blocked subdomain (e.g., "evil.hl7.org"), we must check against the synthesized
+// wildcard, or the blocked entry passes through uncaught. This test verifies that
+// allow "hl7.org" + block "evil.hl7.org" correctly drops the entire "hl7.org"
+// allow rule from the rendered policy.
+func TestCiliumNetworkPolicy_BareAllowVsBareBlockConflict(t *testing.T) {
+	egress := v1alpha1.EgressPolicy{
+		AllowedDestinations:      []string{"hl7.org", "safe.other.com"},
+		BlockedDestinations:      []string{"evil.hl7.org"},
+		BlockUnknownDestinations: true,
+	}
+
+	obj := CiliumNetworkPolicy("ns", egress)
+	rules, _, _ := unstructured.NestedSlice(obj.Object, "spec", "egress")
+
+	// DNS rule + only the non-conflicting "safe.other.com" entry — the
+	// "hl7.org" entry is dropped entirely because its synthesized "*.hl7.org"
+	// wildcard covers the blocked "evil.hl7.org".
+	if len(rules) != 2 {
+		t.Fatalf("len(spec.egress) = %d, want 2 (DNS + safe.other.com only)", len(rules))
+	}
+
+	allowedRule := rules[1].(map[string]interface{})
+	fqdns, _, _ := unstructured.NestedSlice(allowedRule, "toFQDNs")
+	if matchName, _, _ := unstructured.NestedString(fqdns[0].(map[string]interface{}), "matchName"); matchName != "safe.other.com" {
+		t.Errorf("remaining allowed entry = %q, want %q (hl7.org should be excluded)", matchName, "safe.other.com")
+	}
+}
+

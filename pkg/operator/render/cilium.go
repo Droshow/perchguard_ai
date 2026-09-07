@@ -157,12 +157,32 @@ func fqdnRules(dest string, portRules []interface{}) []interface{} {
 // entry whose suffix covers the other (in either direction) — the network
 // layer can't express "allow this wildcard except that one name", so the whole
 // wildcard entry is dropped rather than partially honored.
+//
+// CRITICAL FIX: when an allowed entry is a bare domain (not already a wildcard),
+// the renderer synthesizes BOTH matchName and matchPattern: "*."+dest. So a bare
+// allow "hl7.org" must be checked against blocked entries using both "hl7.org"
+// (the bare entry) AND "*.hl7.org" (the synthesized wildcard), or a later block
+// "evil.hl7.org" passes through uncaught.
 func excludeBlockedConflicts(allowed, blocked []string) (kept, skipped []string) {
 	for _, a := range allowed {
 		conflict := false
+		
+		// Bare domain names get synthesized as both matchName and matchPattern "*."+a.
+		// Check both forms against blocked list.
+		var toCheck []string
+		toCheck = append(toCheck, a)
+		if !strings.HasPrefix(a, "*.") {
+			toCheck = append(toCheck, "*."+a)
+		}
+		
 		for _, b := range blocked {
-			if a == b || wildcardCovers(a, b) || wildcardCovers(b, a) {
-				conflict = true
+			for _, checkAgainst := range toCheck {
+				if checkAgainst == b || wildcardCovers(checkAgainst, b) || wildcardCovers(b, checkAgainst) {
+					conflict = true
+					break
+				}
+			}
+			if conflict {
 				break
 			}
 		}
