@@ -22,12 +22,22 @@ spec:
         app: redteam-mcp-agent
         app.kubernetes.io/name: redteam-mcp-agent
     spec:
-      # Scheduled onto the isolated-agent node group (Phase 10c) — Fargate can't
-      # host Cilium's node-local enforcement, see deployments/eks/cilium.tf.
+      # Scheduled onto the Kata-capable node group (Phase 10e) — a superset of
+      # the isolated-agent group (Phase 10c): same perchguard/workload-class
+      # label so Cilium's node affinity still matches, plus perchguard/kata-capable
+      # so this is the Phase 10e dogfood workload validating both containment
+      # layers stacked on the same pod. That node group defaults to desired_size=0
+      # (deployments/eks/variables.tf) — this pod stays Pending until it's scaled
+      # up for a validation run.
       nodeSelector:
         perchguard/workload-class: isolated-agent
+        perchguard/kata-capable: "true"
       tolerations:
         - key: "perchguard.io/agent-workload"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+        - key: "perchguard.io/kata-workload"
           operator: "Equal"
           value: "true"
           effect: "NoSchedule"

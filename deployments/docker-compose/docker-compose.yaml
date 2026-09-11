@@ -80,6 +80,20 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Phase 11: real LangGraph-orchestrated delegation graph (fan-out/fan-in), every
+  # hop governed by PerchGuard — see deployments/insurance-agent-langgraph/graph.py.
+  insurance-agent-langgraph:
+    build:
+      context: ../..         # repo root — picks up sdk/python for the perchguard SDK
+      dockerfile: deployments/insurance-agent-langgraph/Dockerfile
+    command: sleep 3600    # keep container running for docker compose exec during demo
+    depends_on:
+      perchguard:
+        condition: service_healthy
+      insurance-mcp-server:
+        condition: service_started
+    restart: unless-stopped
+
   jaeger:
     image: jaegertracing/all-in-one:1.57
     ports:

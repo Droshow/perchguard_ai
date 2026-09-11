@@ -12,7 +12,7 @@ README.md.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from .client import PerchGuardClient
 from .mcp import MCPClient
@@ -49,6 +49,7 @@ class GovernedAgentLoop:
         perchguard_api_key: Optional[str] = None,
         max_iterations: int = 10,
         verbose: bool = True,
+        local_tools: Optional[dict[str, Callable[[dict], str]]] = None,
     ) -> None:
         self.anthropic = anthropic_client
         self.pg = PerchGuardClient(perchguard_url, api_key=perchguard_api_key)
@@ -56,6 +57,7 @@ class GovernedAgentLoop:
         self.model = model
         self.max_iterations = max_iterations
         self.verbose = verbose
+        self.local_tools = local_tools or {}
 
     def run(
         self,
@@ -139,7 +141,10 @@ class GovernedAgentLoop:
                     if decision.action == Action.MUTATE and self.verbose:
                         print(f"      mutated params: {params}", flush=True)
 
-                    raw_output = self.mcp.call_tool(block.name, params)
+                    if block.name in self.local_tools:
+                        raw_output = self.local_tools[block.name](params)
+                    else:
+                        raw_output = self.mcp.call_tool(block.name, params)
 
                     out_decision = self.pg.validate_output(session=session, output=raw_output)
                     if self.verbose:

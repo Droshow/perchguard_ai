@@ -1,3 +1,14 @@
+"""Tool schemas for the LangGraph fraud-escalation graph (Phase 11).
+
+Same five tools deployments/insurance-mcp-server/main.go already implements
+(read_policy, search_claims, write_report, run_sql, send_notification) — no MCP
+server changes needed. Each role gets the subset it actually uses in its own
+Claude tool-use loop; configs/policies.yaml's allowedTools ceilings (checked by
+ValidateScope at registration) are separately what lets authority flow down the
+delegation graph and are intentionally broader in places (see policies.yaml's
+comment on claims_intake/send_notification).
+"""
+
 TOOL_DEFINITIONS = [
     {
         "name": "read_policy",
@@ -58,29 +69,29 @@ TOOL_DEFINITIONS = [
     },
 ]
 
-ESCALATE_TOOL = {
-    "name": "escalate_to_investigator",
-    "description": "Hands off a suspicious claim to a fraud-investigator sub-agent for deeper review",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "claim_id": {"type": "string", "description": "Claim identifier, e.g. CLM-9985"},
-            "reason": {"type": "string", "description": "Why this claim looks suspicious"},
-        },
-        "required": ["claim_id", "reason"],
-    },
-}
-
 _BY_NAME = {t["name"]: t for t in TOOL_DEFINITIONS}
 
 INTAKE_TOOL_DEFINITIONS = [
     _BY_NAME["read_policy"],
     _BY_NAME["search_claims"],
-    ESCALATE_TOOL,
 ]
 
 INVESTIGATOR_TOOL_DEFINITIONS = [
     _BY_NAME["search_claims"],
     _BY_NAME["run_sql"],
     _BY_NAME["write_report"],
+]
+
+COMPLIANCE_TOOL_DEFINITIONS = [
+    _BY_NAME["read_policy"],
+    _BY_NAME["search_claims"],
+    _BY_NAME["write_report"],
+]
+
+APPROVER_TOOL_DEFINITIONS = [
+    _BY_NAME["write_report"],
+]
+
+NOTIFIER_TOOL_DEFINITIONS = [
+    _BY_NAME["send_notification"],
 ]

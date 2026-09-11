@@ -127,6 +127,58 @@ policies:
           - "database:drop_*"
           - "cloud:iam:*"
 
+      - role: "claims_intake"
+        allowedTools:
+          - "read_policy"
+          - "search_claims"
+          - "run_sql"
+          - "write_report"
+          - "escalate_to_investigator"
+          - "send_notification"          # ceiling handed down to senior_approver/notifier below —
+                                          # claims_intake itself stays blocked from calling it directly (deniedTools)
+        deniedTools:
+          - "send_notification"
+      - role: "fraud_investigator"
+        allowedTools:
+          - "search_claims"
+          - "run_sql"
+          - "write_report"
+        deniedTools:
+          - "escalate_to_investigator"   # no recursive delegation
+          - "send_notification"
+      # Phase 11 LangGraph delegation graph: claims_intake fans out to
+      # fraud_investigator + compliance_reviewer concurrently, both join at
+      # senior_approver, which hands off to notifier. See
+      # sdk/python/perchguard/langgraph_adapter.py and
+      # deployments/insurance-agent-langgraph/.
+      - role: "compliance_reviewer"
+        allowedTools:
+          - "read_policy"
+          - "search_claims"
+          - "write_report"
+        deniedTools:
+          - "escalate_to_investigator"
+          - "run_sql"
+          - "send_notification"
+      - role: "senior_approver"
+        allowedTools:
+          - "write_report"
+          - "send_notification"
+        deniedTools:
+          - "escalate_to_investigator"
+          - "run_sql"
+          - "search_claims"
+          - "read_policy"
+      - role: "notifier"
+        allowedTools:
+          - "send_notification"
+        deniedTools:
+          - "escalate_to_investigator"
+          - "run_sql"
+          - "search_claims"
+          - "read_policy"
+          - "write_report"
+
       # ── Healthcare roles ──────────────────────────────────────────────
       # Three-tier hierarchy: clinician > nurse > billing_agent
       # Models HIPAA minimum-necessary access: each role sees only what
@@ -177,6 +229,12 @@ policies:
       - "*.nhs.uk"
       - "hl7.org"
       - "fhir.org"
+      # Python agent pods (Phase 10d): closes the gap between this app-layer,
+      # npm/JS-oriented list and real pod-level egress needs surfaced by Hubble
+      # flow-log burn-in before any namespace flips CiliumNetworkPolicy to Enforce.
+      - "api.anthropic.com"
+      - "pypi.org"
+      - "files.pythonhosted.org"
     blockedDestinations:
       - "*.ngrok.io"           # common exfil channel
       - "pastebin.com"

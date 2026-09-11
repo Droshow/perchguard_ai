@@ -69,6 +69,7 @@ artifacts/docs/marketing/
 .claude/settings.local.json
 .claude/session-context.md
 /.claude/
+**/.claude/
 
 # Docs — large PDFs
 architecture/docs/EUAIACT_EN_TXT.pdf
