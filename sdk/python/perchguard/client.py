@@ -66,12 +66,24 @@ class PerchGuardClient:
         version: str = "0.1.0",
         manifest_id: Optional[str] = None,
         parent_session_id: str = "",
+        parent_token: Optional[str] = None,
     ) -> Session:
         """Register a session, pre-seeding its intent baseline before any tool call.
 
         Builds an AgentManifest (pkg/manifest/manifest.go) from these kwargs so
         callers don't need to hand-write manifest YAML/JSON for the common case.
+
+        When parent_session_id is set, the server requires proof that the caller
+        actually holds that parent session's token (pkg/api/agents.go) — pass the
+        parent Session's own `.token` as parent_token. Without it the server can't
+        tell a real delegation from an unverified claim, so this raises client-side
+        rather than sending a registration request the server will reject anyway.
         """
+        if parent_session_id and not parent_token:
+            raise PerchGuardConfigError(
+                "register(parent_session_id=...) requires parent_token — pass the "
+                "parent Session's .token to prove you hold it"
+            )
         manifest = {
             "apiVersion": "perchguard.ai/v1",
             "kind": "AgentManifest",
@@ -97,15 +109,21 @@ class PerchGuardClient:
             "parent_session_id": parent_session_id,
         }
 
+        headers = {"X-PerchGuard-Agent-Token": parent_token} if parent_token else {}
         try:
             resp = self._http.post(
-                f"{self.base_url}/agents/register", json=manifest, timeout=self.timeout
+                f"{self.base_url}/agents/register",
+                json=manifest,
+                headers=headers,
+                timeout=self.timeout,
             )
         except requests.RequestException as e:
             raise PerchGuardUnavailableError(f"could not reach PerchGuard: {e}") from e
 
         if resp.status_code == 400:
             raise PerchGuardValidationError(_error_message(resp))
+        if resp.status_code == 403:
+            raise PerchGuardAuthError(_error_message(resp))
         if resp.status_code != 201:
             raise PerchGuardUnavailableError(
                 f"unexpected response registering session (HTTP {resp.status_code}): {_error_message(resp)}"

@@ -43,6 +43,7 @@ def run_fraud_escalation(anthropic_client):
             agent_role="fraud_investigator",
             intent=f"Investigate escalated claim {claim_id}",
             parent_session_id=parent_session.id,
+            parent_token=parent_session.token,
         )
         print(f"    SESSION: {child_session.id} (sub-agent of {parent_session.id})", flush=True)
         try:

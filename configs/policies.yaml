@@ -134,6 +134,8 @@ policies:
           - "run_sql"
           - "write_report"
           - "escalate_to_investigator"
+          - "send_notification"          # ceiling handed down to senior_approver/notifier below —
+                                          # claims_intake itself stays blocked from calling it directly (deniedTools)
         deniedTools:
           - "send_notification"
       - role: "fraud_investigator"
@@ -144,6 +146,38 @@ policies:
         deniedTools:
           - "escalate_to_investigator"   # no recursive delegation
           - "send_notification"
+      # Phase 11 LangGraph delegation graph: claims_intake fans out to
+      # fraud_investigator + compliance_reviewer concurrently, both join at
+      # senior_approver, which hands off to notifier. See
+      # sdk/python/perchguard/langgraph_adapter.py and
+      # deployments/insurance-agent-langgraph/.
+      - role: "compliance_reviewer"
+        allowedTools:
+          - "read_policy"
+          - "search_claims"
+          - "write_report"
+        deniedTools:
+          - "escalate_to_investigator"
+          - "run_sql"
+          - "send_notification"
+      - role: "senior_approver"
+        allowedTools:
+          - "write_report"
+          - "send_notification"
+        deniedTools:
+          - "escalate_to_investigator"
+          - "run_sql"
+          - "search_claims"
+          - "read_policy"
+      - role: "notifier"
+        allowedTools:
+          - "send_notification"
+        deniedTools:
+          - "escalate_to_investigator"
+          - "run_sql"
+          - "search_claims"
+          - "read_policy"
+          - "write_report"
 
       # ── Healthcare roles ──────────────────────────────────────────────
       # Three-tier hierarchy: clinician > nurse > billing_agent

@@ -396,6 +396,152 @@ func TestRegisterAgent_UniqueTokensPerRegistration(t *testing.T) {
 	}
 }
 
+// ── Delegated registration (parent_session_id) ────────────────────────────────
+
+func childManifest(parentSessionID string) string {
+	return `{
+  "apiVersion": "perchguard/v1",
+  "kind": "AgentManifest",
+  "metadata": {"id": "child-agent", "owner": "test", "created": "2026-05-07", "version": "1.0"},
+  "mission": {"summary": "child agent", "scope": ["read"], "out_of_scope": []},
+  "authorization": {"role": "readonly", "allowed_systems": [], "human_review_required_for": []},
+  "invariants": [],
+  "project_context": {},
+  "parent_session_id": "` + parentSessionID + `"
+}`
+}
+
+// A registration asserting parent_session_id without presenting that parent's own
+// token must be rejected — otherwise parent_session_id is just an unverified claim.
+func TestRegisterAgent_DelegationRequiresValidParentToken(t *testing.T) {
+	srv, _, _ := buildServer(t, "k", nil)
+	mux := buildMux(srv)
+
+	parentResp := do(t, mux, http.MethodPost, "/agents/register", "", bytes.NewBufferString(minimalManifest))
+	var parentReg map[string]any
+	json.NewDecoder(parentResp.Body).Decode(&parentReg)
+	parentSessionID := parentReg["session_id"].(string)
+
+	cases := []struct {
+		name  string
+		token string
+	}{
+		{"missing token", ""},
+		{"wrong token", "pgat-not-the-real-token"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/agents/register", bytes.NewBufferString(childManifest(parentSessionID)))
+			req.Header.Set("Content-Type", "application/json")
+			if tc.token != "" {
+				req.Header.Set("X-PerchGuard-Agent-Token", tc.token)
+			}
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+			resp := rr.Result()
+			if resp.StatusCode != http.StatusForbidden {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("want 403, got %d: %s", resp.StatusCode, body)
+			}
+		})
+	}
+}
+
+// A registration presenting the parent's own token succeeds and records the edge.
+func TestRegisterAgent_DelegationAcceptsValidParentToken(t *testing.T) {
+	srv, _, _ := buildServer(t, "k", nil)
+	mux := buildMux(srv)
+
+	parentResp := do(t, mux, http.MethodPost, "/agents/register", "", bytes.NewBufferString(minimalManifest))
+	var parentReg map[string]any
+	json.NewDecoder(parentResp.Body).Decode(&parentReg)
+	parentSessionID := parentReg["session_id"].(string)
+	parentToken := parentReg["token"].(string)
+
+	req := httptest.NewRequest(http.MethodPost, "/agents/register", bytes.NewBufferString(childManifest(parentSessionID)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-PerchGuard-Agent-Token", parentToken)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	resp := rr.Result()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 201, got %d: %s", resp.StatusCode, body)
+	}
+	var childReg map[string]any
+	json.NewDecoder(resp.Body).Decode(&childReg)
+	childSessionID := childReg["session_id"].(string)
+
+	if got, ok := srv.delegationStore.Parent(childSessionID); !ok || got != parentSessionID {
+		t.Errorf("want delegation edge %s -> %s, got %s (ok=%v)", childSessionID, parentSessionID, got, ok)
+	}
+}
+
+// Budget inheritance (pkg/api/agents.go's delegationFraction logic) is computed
+// independently per child registration — there is no pooled/conserved budget across
+// concurrent siblings. This documents that as current, accepted behavior: three
+// siblings each independently get 50% of the parent's limit, so their sum (150) can
+// exceed the parent's own nominal limit (100). Real pooling would be a
+// pkg/agent/fleet.go change; out of scope for the LangGraph delegation work this
+// guards against regressing silently.
+func TestRegisterAgent_DelegationBudgetNotPooledAcrossSiblings(t *testing.T) {
+	srv, sessions, _ := buildServer(t, "k", nil)
+	mux := buildMux(srv)
+
+	cfg := &policy.Config{
+		Policies: policy.Policies{
+			ToolAuthorization: policy.ToolAuthorizationPolicy{Enabled: false},
+			SessionBudget: policy.SessionBudgetPolicy{
+				Enabled:            true,
+				Limits:             policy.BudgetLimits{MaxToolCallsPerSession: 100},
+				DelegationFraction: 0.5,
+			},
+		},
+	}
+	srv.policyMeta.Store(&policy.LoadResult{Config: cfg})
+
+	parentResp := do(t, mux, http.MethodPost, "/agents/register", "", bytes.NewBufferString(minimalManifest))
+	var parentReg map[string]any
+	json.NewDecoder(parentResp.Body).Decode(&parentReg)
+	parentSessionID := parentReg["session_id"].(string)
+	parentToken := parentReg["token"].(string)
+
+	var childLimits []int
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/agents/register", bytes.NewBufferString(childManifest(parentSessionID)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-PerchGuard-Agent-Token", parentToken)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+		resp := rr.Result()
+		if resp.StatusCode != http.StatusCreated {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("sibling %d: want 201, got %d: %s", i, resp.StatusCode, body)
+		}
+		var childReg map[string]any
+		json.NewDecoder(resp.Body).Decode(&childReg)
+		childSessionID := childReg["session_id"].(string)
+		ss, ok := sessions.Get(childSessionID)
+		if !ok {
+			t.Fatalf("sibling %d: no session state found", i)
+		}
+		childLimits = append(childLimits, ss.DelegatedCallLimit)
+	}
+
+	sum := 0
+	for i, limit := range childLimits {
+		if limit != 50 {
+			t.Errorf("sibling %d: want DelegatedCallLimit=50 (0.5 * parent's 100), got %d", i, limit)
+		}
+		sum += limit
+	}
+	if sum <= cfg.Policies.SessionBudget.Limits.MaxToolCallsPerSession {
+		t.Fatalf("expected this test to demonstrate unpooled budget (sum %d > parent limit %d) — "+
+			"if this now fails, budget pooling may have been added and this test's premise is stale",
+			sum, cfg.Policies.SessionBudget.Limits.MaxToolCallsPerSession)
+	}
+}
+
 // ── GET /agents/{id} ──────────────────────────────────────────────────────────
 
 func TestGetAgent_NotFound(t *testing.T) {

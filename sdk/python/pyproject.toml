@@ -22,6 +22,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "langgraph>=1.0",
+]
+langgraph = [
+    "langgraph>=1.0",
 ]
 
 [project.urls]
