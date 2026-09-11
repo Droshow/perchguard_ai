@@ -6,26 +6,39 @@
 // Deployment from cmd/main.go's admission-control HTTP path: a controller-runtime
 // manager issue here must not be able to take down /intercept.
 //
-// Run: go run cmd/perchguard-operator/main.go
-// Env: PERCHGUARD_POLICY        ./configs/policies.yaml (mounted policies.yaml path)
+// Also serves the Phase 10e Kata-injection mutating webhook on the same manager
+// (see pkg/operator/webhook) — chosen over a separate binary/Deployment because
+// it shares the same RBAC/TLS/deploy surface and neither reconciler nor webhook
+// can take down /intercept regardless.
 //
-//	PERCHGUARD_POLICY_INTERVAL 10s (poll interval for policy-file changes)
-//	PERCHGUARD_METRICS_ADDR    :8081 (controller-runtime metrics/health server)
+// Run: go run cmd/perchguard-operator/main.go
+// Env: PERCHGUARD_POLICY          ./configs/policies.yaml (mounted policies.yaml path)
+//
+//	PERCHGUARD_POLICY_INTERVAL   10s (poll interval for policy-file changes)
+//	PERCHGUARD_METRICS_ADDR      :8081 (controller-runtime metrics/health server)
+//	PERCHGUARD_WEBHOOK_PORT      9443 (mutating webhook HTTPS port)
+//	PERCHGUARD_WEBHOOK_CERT_DIR  /tmp/k8s-webhook-server/serving-certs (tls.crt/tls.key dir)
+//	PERCHGUARD_KATA_RUNTIME_CLASS kata-qemu (RuntimeClass name injected into pods)
 package main
 
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-logr/stdr"
+	corev1 "k8s.io/api/core/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/Droshow/PerchGuard/perchguard/pkg/envutil"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/operator/api/v1alpha1"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/operator/controller"
+	pgwebhook "github.com/Droshow/PerchGuard/perchguard/pkg/operator/webhook"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/policy"
 )
 
@@ -38,6 +51,12 @@ func main() {
 		log.Fatalf("invalid PERCHGUARD_POLICY_INTERVAL: %v", err)
 	}
 	metricsAddr := envutil.GetEnv("PERCHGUARD_METRICS_ADDR", ":8081")
+	webhookPort, err := strconv.Atoi(envutil.GetEnv("PERCHGUARD_WEBHOOK_PORT", "9443"))
+	if err != nil {
+		log.Fatalf("invalid PERCHGUARD_WEBHOOK_PORT: %v", err)
+	}
+	webhookCertDir := envutil.GetEnv("PERCHGUARD_WEBHOOK_CERT_DIR", "/tmp/k8s-webhook-server/serving-certs")
+	kataRuntimeClass := envutil.GetEnv("PERCHGUARD_KATA_RUNTIME_CLASS", "kata-qemu")
 
 	// Fail fast on a broken policy file at startup, same as cmd/main.go's admission
 	// path — better to crash-loop visibly than run with a stale/empty spec.
@@ -59,10 +78,22 @@ func main() {
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
 		HealthProbeBindAddress: metricsAddr,
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    webhookPort,
+			CertDir: webhookCertDir,
+		}),
 	})
 	if err != nil {
 		log.Fatalf("create manager: %v", err)
 	}
+
+	// Phase 10e: mutating webhook injecting the Kata RuntimeClass. Which
+	// namespaces this is even invoked for is scoped at the Kubernetes level via
+	// deployments/k3s/kata/mutating-webhook.yaml's namespaceSelector, not here.
+	mgr.GetWebhookServer().Register(
+		"/mutate-agent-pods-kata",
+		admission.WithDefaulter[*corev1.Pod](scheme, &pgwebhook.KataInjector{RuntimeClassName: kataRuntimeClass}),
+	)
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		log.Fatalf("register healthz check: %v", err)
 	}

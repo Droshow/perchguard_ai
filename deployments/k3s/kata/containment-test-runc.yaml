@@ -1,0 +1,54 @@
+# Phase 10f — containment negative control (runc side).
+#
+# Deliberately NOT an exploit/escape attempt — that's out of scope even for
+# authorized testing of your own infra. This is a black-box boundary probe:
+# report kernel version, PID-namespace visibility, and /dev contents, then
+# scripts/kata-containment-check.sh diffs this against containment-test-kata.yaml's
+# output. A real Kata sandbox runs its own guest kernel, so `uname -r` must
+# differ between the two pods even though both request the same image and run
+# on the same physical node (nodeSelector below pins both to the Kata-capable
+# node group) — that's the actual containment boundary being validated, not
+# just a RuntimeClass label being set.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: containment-test-runc
+  namespace: redteam-mcp-agent
+  labels:
+    app: containment-test
+    variant: runc
+spec:
+  restartPolicy: Never
+  # No runtimeClassName — plain runc, sharing the host kernel.
+  nodeSelector:
+    perchguard/kata-capable: "true"
+  tolerations:
+    - key: perchguard.io/agent-workload
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+    - key: perchguard.io/kata-workload
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probe
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "KERNEL: $(uname -r)"
+          echo "PID_COUNT: $(ls /proc | grep -E '^[0-9]+$' | wc -l)"
+          echo "DEV_ENTRIES: $(ls /dev | tr '\n' ',')"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]

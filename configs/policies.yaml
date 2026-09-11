@@ -127,6 +127,24 @@ policies:
           - "database:drop_*"
           - "cloud:iam:*"
 
+      - role: "claims_intake"
+        allowedTools:
+          - "read_policy"
+          - "search_claims"
+          - "run_sql"
+          - "write_report"
+          - "escalate_to_investigator"
+        deniedTools:
+          - "send_notification"
+      - role: "fraud_investigator"
+        allowedTools:
+          - "search_claims"
+          - "run_sql"
+          - "write_report"
+        deniedTools:
+          - "escalate_to_investigator"   # no recursive delegation
+          - "send_notification"
+
       # ── Healthcare roles ──────────────────────────────────────────────
       # Three-tier hierarchy: clinician > nurse > billing_agent
       # Models HIPAA minimum-necessary access: each role sees only what
@@ -177,6 +195,12 @@ policies:
       - "*.nhs.uk"
       - "hl7.org"
       - "fhir.org"
+      # Python agent pods (Phase 10d): closes the gap between this app-layer,
+      # npm/JS-oriented list and real pod-level egress needs surfaced by Hubble
+      # flow-log burn-in before any namespace flips CiliumNetworkPolicy to Enforce.
+      - "api.anthropic.com"
+      - "pypi.org"
+      - "files.pythonhosted.org"
     blockedDestinations:
       - "*.ngrok.io"           # common exfil channel
       - "pastebin.com"
