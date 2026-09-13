@@ -13,7 +13,7 @@ from langgraph.errors import InvalidUpdateError
 from langgraph.graph import END, START, StateGraph
 
 from perchguard import GovernedAgentLoop, Session
-from perchguard.exceptions import PerchGuardConfigError
+from perchguard.exceptions import PerchGuardConfigError, PerchGuardValidationError
 from perchguard.langgraph_adapter import GovernanceParent, governed_node
 
 from test_loop import FakeAnthropic, FakeBlock, FakeResponse
@@ -30,16 +30,27 @@ class DiamondState(TypedDict, total=False):
 class FakePGRegistry:
     """Stands in for the external PerchGuardClient governed_node registers/evicts
     through — distinct from GovernedAgentLoop's own internal client, matching how
-    the real demo app uses them (see deployments/insurance-agent-langgraph/)."""
+    the real demo app uses them (see deployments/insurance-agent-langgraph/).
+
+    Tracks which sessions are still live (registered, not yet evicted) and
+    refuses to register a child against a parent that isn't — mirroring
+    pkg/api/agents.go's GetBySession check — so a node that evicts its own
+    session before handing it to children fails here exactly as it would
+    against the real server, instead of silently succeeding.
+    """
 
     def __init__(self):
         self.registered: list[dict] = []
         self.evicted: list[str] = []
+        self._live: set[str] = set()
         self._counter = 0
 
     def register(self, **kwargs):
         if kwargs.get("parent_session_id") and not kwargs.get("parent_token"):
             raise PerchGuardConfigError("parent_session_id without parent_token")
+        parent_id = kwargs.get("parent_session_id")
+        if parent_id and parent_id not in self._live:
+            raise PerchGuardValidationError("parent_session_id not found or expired")
         self._counter += 1
         session = Session(
             id=f"pg-session-{self._counter}",
@@ -51,10 +62,12 @@ class FakePGRegistry:
             parent_session_id=kwargs.get("parent_session_id", ""),
         )
         self.registered.append(kwargs)
+        self._live.add(session.id)
         return session
 
     def evict(self, session, best_effort=False):
         self.evicted.append(session.id)
+        self._live.discard(session.id)
 
 
 def _end_turn_loop(text="done"):
@@ -228,6 +241,45 @@ def test_node_failure_still_evicts_session():
         node({})
 
     assert len(registry.registered) == 1
+    assert registry.evicted == ["pg-session-1"]
+
+
+def test_parent_node_not_evicted_before_children_can_register():
+    """Regression test: a node built with sets_parent_for_children=True must stay
+    registered after it returns, so its children can still prove parentage. Evicting
+    it eagerly (the original bug) made every downstream registration fail with
+    "parent_session_id not found or expired" against a real server — this fake
+    enforces that same check, so the fan-out below would raise if the bug returned.
+    """
+    registry = FakePGRegistry()
+
+    root_node = governed_node(
+        agent_id="root", agent_role="claims_intake", pg=registry, loop=_end_turn_loop(),
+        task=lambda s: "t", tools=[], result_key="root_result", sets_parent_for_children=True,
+    )
+    child_node = governed_node(
+        agent_id="child", agent_role="fraud_investigator", pg=registry, loop=_end_turn_loop(),
+        task=lambda s: "t", tools=[], result_key="a_result",
+    )
+
+    root_update = root_node({})
+    assert registry.evicted == []  # not evicted — children still need it
+
+    # Registering the child against the still-live parent must succeed.
+    child_update = child_node({"governance_parent": root_update["governance_parent"]})
+    assert registry.registered[1]["parent_session_id"] == "pg-session-1"
+    # The leaf child (sets_parent_for_children=False) IS evicted once it's done.
+    assert registry.evicted == ["pg-session-2"]
+    assert child_update["a_result"] == "done"
+
+
+def test_leaf_node_evicted_immediately_on_success():
+    registry = FakePGRegistry()
+    node = governed_node(
+        agent_id="a", agent_role="fraud_investigator", pg=registry, loop=_end_turn_loop(),
+        task=lambda s: "t", tools=[], result_key="a_result",
+    )
+    node({})
     assert registry.evicted == ["pg-session-1"]
 
 

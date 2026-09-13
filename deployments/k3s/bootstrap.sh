@@ -64,7 +64,43 @@ kubectl apply -f "${SCRIPT_DIR}/redteam-mcp-agent/deployment.yaml"
 # Deployment reference the security.perchguard.io/v1alpha1 API this CRD registers.
 kubectl apply -f "${SCRIPT_DIR}/agent-isolation-policy-crd.yaml"
 kubectl apply -f "${SCRIPT_DIR}/perchguard-operator/rbac.yaml"
+
+# Kata sandbox layer (Phase 10e) — the operator Deployment (applied right after)
+# mounts a perchguard-kata-webhook-tls secret, so it must exist first or the pod
+# sits in CreateContainerConfigError. deployments/eks/kata.tf generates this cert
+# with Terraform's tls provider for EKS; there's no Terraform in this k3s path, so
+# openssl does the equivalent here. Skipped (idempotent) if the secret already
+# exists, same pattern as the LLM secret above.
+KATA_TLS_SECRET="perchguard-kata-webhook-tls"
+command -v openssl >/dev/null || { echo "ERROR: openssl is required to generate the Kata webhook TLS cert." >&2; exit 1; }
+echo "Kata sandbox layer — webhook TLS + kata-deploy..."
+if kubectl get secret "${KATA_TLS_SECRET}" --namespace "${NAMESPACE}" &>/dev/null; then
+  echo "  Secret '${KATA_TLS_SECRET}' already exists — skipping cert generation."
+else
+  CERT_DIR="$(mktemp -d)"
+  trap 'rm -rf "${CERT_DIR}"' EXIT
+  openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+    -keyout "${CERT_DIR}/tls.key" -out "${CERT_DIR}/tls.crt" \
+    -subj "/CN=perchguard-operator.perchguard.svc" \
+    -addext "subjectAltName=DNS:perchguard-operator.perchguard.svc,DNS:perchguard-operator.perchguard.svc.cluster.local" \
+    2>/dev/null
+  kubectl create secret tls "${KATA_TLS_SECRET}" \
+    --namespace "${NAMESPACE}" \
+    --cert="${CERT_DIR}/tls.crt" --key="${CERT_DIR}/tls.key"
+  echo "  Secret '${KATA_TLS_SECRET}' created."
+fi
+
 kubectl apply -f "${SCRIPT_DIR}/perchguard-operator/deployment.yaml"
+
+# kata-deploy is scoped via nodeSelector to perchguard/kata-capable nodes
+# (deployments/eks/kata.tf) — inert on a stock k3s node with no such label, same
+# as the EKS node group defaulting to desired_size=0.
+echo "  Applying kata-deploy (DaemonSet + RuntimeClass — inert without a kata-capable node)..."
+kubectl apply -f "${SCRIPT_DIR}/kata/kata-deploy.yaml"
+
+echo "  Rendering and applying the Kata mutating webhook..."
+CA_BUNDLE="$(kubectl get secret "${KATA_TLS_SECRET}" --namespace "${NAMESPACE}" -o jsonpath='{.data.tls\.crt}')"
+sed "s|\${WEBHOOK_CA_BUNDLE}|${CA_BUNDLE}|" "${SCRIPT_DIR}/kata/mutating-webhook.yaml" | kubectl apply -f -
 
 echo ""
 echo "Done. Check rollout status with:"

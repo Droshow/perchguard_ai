@@ -32,6 +32,12 @@ for the live-validation pass this still needs):
   (pkg/api/agents.go's existing budget-inheritance logic, unchanged) — two or more
   concurrent children can collectively consume more than the parent's nominal
   budget. See test_langgraph_adapter.py's budget test for the current behavior.
+- Nodes built with `sets_parent_for_children=True` are not evicted by `governed_node`
+  on success — see that function's docstring for why (evicting before children
+  register against that session would break their parent-token proof). Those
+  sessions stay registered until something else cleans them up. Don't rely on
+  `governed_node` alone for full session lifecycle hygiene in a graph that uses
+  fan-out/fan-in.
 """
 
 from __future__ import annotations
@@ -64,9 +70,20 @@ def governed_node(
 
     Reads `state[parent_key]` (if present) to register as that session's
     delegated child, proving it via the parent's own token — see module
-    docstring. Registers, runs the governed loop, and evicts (best-effort) in a
-    `finally`, so a node that raises mid-run still doesn't leak a
-    registered-but-never-evicted session.
+    docstring. Registers and runs the governed loop.
+
+    A node that raises mid-run evicts (best-effort) before re-raising, so it
+    never leaks a registered-but-never-evicted session. A node that succeeds
+    and is NOT `sets_parent_for_children` also evicts immediately afterward.
+    A node that succeeds and IS `sets_parent_for_children` deliberately does
+    NOT evict here: its session_id/token are handed to children in the
+    returned state, and PerchGuard's DELETE /api/sessions/{id} really does
+    remove the registration (pkg/api/sessions.go) — evicting before those
+    children register would make their parent-token proof fail server-side
+    with "parent_session_id not found or expired". That session is left
+    registered until the graph run's caller cleans it up (e.g. via TTL/reaper
+    on the server side); this adapter has no "this subtree is done" hook to
+    evict it sooner.
     """
 
     def node(state: dict) -> dict:
@@ -87,12 +104,15 @@ def governed_node(
                 tools=tools,
                 session=session,
             )
-        finally:
+        except Exception:
             pg.evict(session, best_effort=True)
+            raise
 
         update: dict[str, Any] = {result_key: result}
         if sets_parent_for_children:
             update[parent_key] = GovernanceParent(session_id=session.id, token=session.token)
+        else:
+            pg.evict(session, best_effort=True)
         return update
 
     return node
