@@ -1,6 +1,7 @@
 # Phase 12 — Swarm Graph (Topology + Cross-Agent Data Lineage)
 
-Status: Spec only, not implemented.
+Status: Implemented (this PR). `/security-review` completed; findings below fixed
+before merge.
 
 ## Goal
 
@@ -106,10 +107,34 @@ check for tokens.
   mutexes; the new `origin` map needs the same discipline.
 - No new deps, no audit schema change.
 
-## Implementation order (when approved)
+## Implementation order
 
 1. Manifest field (`InheritedDataRefs`)
 2. Lineage store verify + seed (`SeedInherited`, `origin` map)
 3. `GET /api/swarm` endpoint
 4. Dashboard swarm panel
 5. Tests (unverified-ref rejection, endpoint shape, race detector)
+
+## Security review findings (fixed before merge)
+
+1. **Stored XSS via `agent_id`/tool names in the dashboard SVG.** `agent_id` comes
+   from `Metadata.ID` in a manifest submitted to the unauthenticated
+   `POST /agents/register`; it and lineage tool names were interpolated into
+   `innerHTML` unescaped, and the dashboard page holds the API key in scope
+   (`PG_KEY`). Fixed: an `escHtml` helper (`pkg/api/dashboard.go`) is applied to
+   every agent-supplied string before interpolation, and the per-node click handler
+   was changed from an inline `onclick` string (a second, JS-context escaping
+   problem) to a `data-session` attribute read via one delegated `click` listener.
+2. **`GET /api/swarm` unguarded on the dashboard-only port.** The dashboard mux
+   (`RegisterDashboardRoutes`, `:8081` in copilot mode) mounts several endpoints
+   without `requireAPIKey` by design ("localhost-only use"), and the new route was
+   added following that pattern. Swarm data is richer than its siblings —
+   cross-session lineage refs, not just per-session or aggregate data — so it was
+   given the `requireAPIKey` guard even on this mux; the dashboard JS already sends
+   the key via `PG_HEADERS`, so this is transparent.
+3. **TOCTOU between ref verification and seeding.** The registration handler
+   verified each claimed ref against `LineageStore.Graph(parentSessionID)`, then
+   `SeedInherited` re-resolved the same parent by ID — a session eviction in
+   between could make the second lookup return `nil` and silently drop
+   already-verified lineage. Fixed: `SeedInherited` now takes the `*LineageGraph`
+   pointer the caller already verified against, rather than re-resolving by ID.

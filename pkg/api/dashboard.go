@@ -24,6 +24,10 @@ func (s *APIServer) RegisterDashboardRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/sessions/{id}/budget", http.HandlerFunc(s.getSessionBudget))
 	mux.Handle("GET /api/pipeline", http.HandlerFunc(s.getPipeline))
 	mux.Handle("GET /api/stats", http.HandlerFunc(s.getStats))
+	// Unlike its dashboard-mux siblings above, swarm data spans sessions (cross-agent
+	// data-lineage refs, parent chains) rather than one session or aggregate counts —
+	// guarded even on this otherwise-unauthenticated local mux.
+	mux.Handle("GET /api/swarm", requireAPIKey(s.keyStore)(http.HandlerFunc(s.getSwarmGraph)))
 }
 
 func (s *APIServer) serveDashboard(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +73,12 @@ h1{font-size:1.2rem;color:#58a6ff;letter-spacing:-.01em}
 .enforce-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.72rem;margin-bottom:10px}
 .enforce-badge.enforce{background:#1a3a1a;color:#3fb950;border:1px solid #2d6a2d}
 .enforce-badge.observe{background:#3a3010;color:#d29922;border:1px solid #6a5510}
+.swarm-card{margin-top:14px}
+.swarm-legend{display:flex;gap:16px;font-size:.72rem;color:#8b949e;margin-bottom:10px}
+.swarm-legend span{display:inline-flex;align-items:center;gap:5px}
+.legend-line{display:inline-block;width:18px;height:0;border-top:1.5px solid #30363d}
+.legend-line.data{border-top:1.5px dashed #58a6ff}
+#swarm-detail{font-size:.78rem;color:#8b949e;margin-top:8px;min-height:1.2em}
 </style>
 </head>
 <body>
@@ -91,6 +101,15 @@ h1{font-size:1.2rem;color:#58a6ff;letter-spacing:-.01em}
     <h2>Top Blocked Tools</h2>
     <div id="blocked"><span class="empty">None</span></div>
   </div>
+</div>
+<div class="card swarm-card">
+  <h2>Swarm Graph</h2>
+  <div class="swarm-legend">
+    <span><span class="legend-line"></span> delegation</span>
+    <span><span class="legend-line data"></span> data lineage</span>
+  </div>
+  <div id="swarm"><span class="empty">Loading...</span></div>
+  <div id="swarm-detail"></div>
 </div>
 <script>
 const PG_KEY = "{{.APIKey}}";
@@ -196,6 +215,137 @@ async function refresh() {
         ).join('')
       : '<span class="empty">None</span>';
   } catch(_) {}
+
+  // Swarm graph — session topology + cross-agent data lineage
+  try {
+    const g = await (await fetch('/api/swarm', {headers: PG_HEADERS})).json();
+    renderSwarm(g);
+  } catch(e) {
+    document.getElementById('swarm').innerHTML = '<span class="empty">Cannot reach /api/swarm (' + e.message + ')</span>';
+  }
+}
+
+function riskColor(r) { return r >= 0.7 ? '#f85149' : r >= 0.4 ? '#d29922' : '#3fb950'; }
+
+// escHtml neutralizes agent-supplied strings (agent_id, tool names come from
+// POST /agents/register, which is unauthenticated by design) before they're
+// interpolated into innerHTML. Session IDs are server-generated, not attacker
+// input, but are escaped too as cheap defense-in-depth.
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderSwarm(g) {
+  const nodes = g.nodes || [];
+  const edges = g.edges || [];
+  if (nodes.length === 0) {
+    document.getElementById('swarm').innerHTML = '<span class="empty">No active sessions</span>';
+    return;
+  }
+
+  const byId = {};
+  nodes.forEach(n => { byId[n.session_id] = n; });
+  const children = {};
+  nodes.forEach(n => { children[n.session_id] = []; });
+  nodes.forEach(n => {
+    if (n.parent_session_id && byId[n.parent_session_id]) children[n.parent_session_id].push(n.session_id);
+  });
+
+  // Layer nodes by BFS depth from roots (no parent, or parent not currently tracked).
+  const depth = {};
+  const visited = new Set();
+  let frontier = nodes.filter(n => !n.parent_session_id || !byId[n.parent_session_id]).map(n => n.session_id);
+  let d = 0;
+  while (frontier.length) {
+    const next = [];
+    frontier.forEach(id => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      depth[id] = d;
+      children[id].forEach(c => next.push(c));
+    });
+    frontier = next;
+    d++;
+  }
+  nodes.forEach(n => { if (depth[n.session_id] === undefined) depth[n.session_id] = 0; });
+
+  const levels = {};
+  nodes.forEach(n => {
+    const lv = depth[n.session_id];
+    (levels[lv] = levels[lv] || []).push(n.session_id);
+  });
+
+  const colW = 130, rowH = 84, pad = 36, r = 15;
+  const levelKeys = Object.keys(levels);
+  const maxLevel = Math.max.apply(null, levelKeys.map(Number));
+  const maxCols = Math.max.apply(null, Object.values(levels).map(a => a.length));
+  const width = Math.max(360, maxCols * colW + pad * 2);
+  const height = (maxLevel + 1) * rowH + pad * 2;
+
+  const pos = {};
+  levelKeys.forEach(lv => {
+    const ids = levels[lv];
+    ids.forEach((id, i) => {
+      pos[id] = {
+        x: pad + (i + 0.5) * (width - pad * 2) / ids.length,
+        y: pad + Number(lv) * rowH,
+      };
+    });
+  });
+
+  let svg = '<svg width="100%" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">';
+
+  edges.filter(e => e.type === 'delegation').forEach(e => {
+    const a = pos[e.from], b = pos[e.to];
+    if (!a || !b) return;
+    svg += '<line x1="' + a.x + '" y1="' + a.y + '" x2="' + b.x + '" y2="' + b.y + '" stroke="#30363d" stroke-width="1.5"/>';
+  });
+  edges.filter(e => e.type === 'data').forEach(e => {
+    const a = pos[e.from_session], b = pos[e.to_session];
+    if (!a || !b) return;
+    svg += '<line x1="' + a.x + '" y1="' + a.y + '" x2="' + b.x + '" y2="' + b.y + '" stroke="#58a6ff" stroke-width="1.2" stroke-dasharray="4,3">' +
+           '<title>' + escHtml(e.from_tool || '?') + ' → ' + escHtml(e.to_tool || '?') + ' (' + escHtml(e.ref || '') + ')</title></line>';
+  });
+  nodes.forEach(n => {
+    const p = pos[n.session_id];
+    if (!p) return;
+    const c = riskColor(n.risk_score || 0);
+    // data-session (not an inline onclick) so an escaped-but-still-attacker-influenced
+    // agent_id can never be interpreted as JS — see the delegated click handler below.
+    svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="' + r + '" fill="' + c + '" stroke="#0d1117" stroke-width="2" ' +
+           'style="cursor:pointer" data-session="' + escHtml(n.session_id) + '">' +
+           '<title>' + escHtml(n.session_id) + ' (' + escHtml(n.agent_id || 'unregistered') + ') risk=' + (n.risk_score || 0).toFixed(2) + '</title></circle>';
+    svg += '<text x="' + p.x + '" y="' + (p.y + r + 12) + '" text-anchor="middle" font-size="9" fill="#8b949e">' +
+           escHtml(n.session_id.substring(0, 10)) + '</text>';
+  });
+  svg += '</svg>';
+
+  const swarmEl = document.getElementById('swarm');
+  swarmEl.innerHTML = svg;
+  const svgNode = swarmEl.querySelector('svg');
+  if (svgNode) {
+    svgNode.addEventListener('click', ev => {
+      const target = ev.target.closest('[data-session]');
+      if (target) showSwarmNode(target.getAttribute('data-session'));
+    });
+  }
+}
+
+async function showSwarmNode(id) {
+  const el = document.getElementById('swarm-detail');
+  try {
+    const resp = await fetch('/api/sessions/' + id, {headers: PG_HEADERS});
+    if (!resp.ok) { el.textContent = id + ' — no detail available'; return; }
+    const s = await resp.json();
+    el.textContent = id + ' — risk ' + (s.risk_score || 0).toFixed(2) + ', ' + (s.event_count || 0) + ' calls';
+  } catch(_) {
+    el.textContent = id + ' — detail unavailable';
+  }
 }
 
 refresh();

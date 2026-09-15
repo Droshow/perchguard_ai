@@ -52,6 +52,7 @@ func buildServer(t *testing.T, apiKey string, llmClient llm.Client) (*APIServer,
 		agent.NewDelegationStore(),
 		nil, // budgetChecker — nil is valid; budget endpoint returns 503 when disabled
 		nil, // decisionStore — nil is valid; review approve/deny just skips the audit write-back
+		nil, // lineageStore — nil is valid; swarm endpoint returns nodes only, no data edges
 	)
 	return srv, sessions, ring
 }
@@ -622,6 +623,7 @@ func buildServerWithBudget(t *testing.T, apiKey string, checker *quota.SessionBu
 		agent.NewDelegationStore(),
 		checker,
 		nil, // decisionStore
+		nil, // lineageStore
 	)
 	return srv, sessions
 }

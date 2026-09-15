@@ -84,6 +84,30 @@ func (s *APIServer) registerAgent(w http.ResponseWriter, r *http.Request) {
 		if s.delegationStore != nil {
 			s.delegationStore.Record(sessionID, m.ParentSessionID)
 		}
+
+		// InheritedDataRefs is a claim about lineage, not a fact — verify each ref
+		// actually exists in the parent's own lineage graph before trusting it.
+		// Without this check, a sub-agent could assert it received arbitrary data
+		// (including data the parent never produced) and use that false lineage
+		// to launder an exfiltration path around the DataExfiltrationValidator.
+		if len(m.InheritedDataRefs) > 0 {
+			if s.lineageStore == nil {
+				writeError(w, http.StatusBadRequest, "inherited_data_refs requires lineage tracking to be enabled")
+				return
+			}
+			parentGraph := s.lineageStore.Graph(m.ParentSessionID)
+			for _, ref := range m.InheritedDataRefs {
+				if parentGraph == nil {
+					writeError(w, http.StatusBadRequest, "inherited_data_refs claims ref \""+ref+"\" but parent session has no lineage graph")
+					return
+				}
+				if _, _, ok := parentGraph.Producer(ref); !ok {
+					writeError(w, http.StatusBadRequest, "inherited_data_refs claims ref \""+ref+"\" not produced by parent session")
+					return
+				}
+			}
+			s.lineageStore.SeedInherited(sessionID, parentGraph, m.InheritedDataRefs)
+		}
 	}
 
 	// Pre-seed the session agent with the declared intent before the first tool call.
