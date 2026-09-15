@@ -138,3 +138,20 @@ check for tokens.
    between could make the second lookup return `nil` and silently drop
    already-verified lineage. Fixed: `SeedInherited` now takes the `*LineageGraph`
    pointer the caller already verified against, rather than re-resolving by ID.
+
+## Open items (not addressed in this PR)
+
+1. **Unrelated: `pkg/api/dashboard.go:75` embeds a ~330KB base64 PNG with C2PA
+   content-credential metadata directly in the dashboard page body.** Found while
+   navigating the file for the swarm panel work; not touched, not explained by
+   anything in this spec. Worth a look — unclear why a governance dashboard ships
+   an embedded image with provenance metadata at all, let alone unminified inline.
+2. **Inherited-ref verification is single-hop only, still unchallenged.** Per the
+   original spec's design decision, `InheritedDataRefs` verification checks only
+   the direct parent's `LineageGraph` (`parentGraph.Producer(ref)` in
+   `pkg/api/agents.go`), not the full ancestor chain. A grandchild cannot claim a
+   grandparent's ref unless the parent re-declared it at each hop — this was a
+   deliberate simplification matching `ValidateScope`'s one-hop-at-a-time model
+   (`pkg/agent/delegation.go`), flagged for explicit sign-off in the original spec
+   and never actually revisited. Still stands; revisit if a real delegation chain
+   needs transitive lineage without re-declaration at every hop.
