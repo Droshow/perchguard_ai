@@ -1,13 +1,18 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
 
 // swarmNode is one governed agent session in the fleet-wide graph.
 type swarmNode struct {
-	SessionID       string  `json:"session_id"`
-	AgentID         string  `json:"agent_id,omitempty"`
-	RiskScore       float64 `json:"risk_score"`
-	ParentSessionID string  `json:"parent_session_id,omitempty"`
+	SessionID       string    `json:"session_id"`
+	AgentID         string    `json:"agent_id,omitempty"`
+	RiskScore       float64   `json:"risk_score"`
+	ParentSessionID string    `json:"parent_session_id,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // swarmEdge is either a delegation edge (parent registered a sub-agent session) or a
@@ -45,6 +50,8 @@ func (s *APIServer) getSwarmGraph(w http.ResponseWriter, r *http.Request) {
 			AgentID:         ss.ManifestID,
 			RiskScore:       ss.RiskScore,
 			ParentSessionID: ss.ParentSessionID,
+			CreatedAt:       ss.CreatedAt,
+			UpdatedAt:       ss.UpdatedAt,
 		})
 		if ss.ParentSessionID != "" {
 			edges = append(edges, swarmEdge{Type: "delegation", From: ss.ParentSessionID, To: ss.SessionID})

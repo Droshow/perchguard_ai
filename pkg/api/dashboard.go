@@ -107,6 +107,7 @@ h1{font-size:1.2rem;color:#58a6ff;letter-spacing:-.01em}
   <div class="swarm-legend">
     <span><span class="legend-line"></span> delegation</span>
     <span><span class="legend-line data"></span> data lineage</span>
+    <span>faded = idle 3m+ (likely a leftover from an earlier run, not this one)</span>
   </div>
   <div id="swarm"><span class="empty">Loading...</span></div>
   <div id="swarm-detail"></div>
@@ -121,7 +122,14 @@ function fmtNum(n) {
   if (n >= 1000) return (n/1000).toFixed(1)+'k';
   return String(n);
 }
-function fmtUSD(v) { return '$' + v.toFixed(2); }
+// Session costs in this demo fleet are routinely a fraction of a cent — toFixed(2)
+// alone rounds every one of them to a misleading "$0.00" even though real, non-zero
+// spend is being tracked. Show enough precision for the value to actually be visible.
+function fmtUSD(v) {
+  if (!v) return '$0.00';
+  if (v < 0.01) return '$' + v.toFixed(4);
+  return '$' + v.toFixed(2);
+}
 
 function bar(label, used, limit, fmt) {
   const p = pct(used, limit);
@@ -227,6 +235,42 @@ async function refresh() {
 
 function riskColor(r) { return r >= 0.7 ? '#f85149' : r >= 0.4 ? '#d29922' : '#3fb950'; }
 
+// Session IDs are "pg-<agent_id, truncated to 20 chars>-<12 hex chars>" (see
+// manifest.NewSessionID) and this demo fleet's agent_ids all share the prefix
+// "insurance-agent-" — truncating from the front (the old behavior) showed the
+// same "pg-insuran" label on every node, making concurrent/successive scenario
+// runs visually indistinguishable. Show the distinguishing tail instead: the
+// role-ish suffix of agent_id plus the session's own unique hex suffix.
+function shortLabel(n) {
+  const base = n.agent_id || n.session_id;
+  const suffix = n.session_id.slice(-6);
+  // Drop whole "-"-separated segments from the front until it fits, instead of
+  // a raw character slice — slice(-18) used to cut mid-word (e.g.
+  // "insurance-agent-compliance" -> "e-agent-compliance"), making every node's
+  // shared "insurance-agent-" prefix garble differently instead of dropping cleanly.
+  const parts = base.split('-');
+  let head = base;
+  while (parts.length > 1 && head.length > 18) {
+    parts.shift();
+    head = parts.join('-');
+  }
+  return head + '·' + suffix;
+}
+
+// Minutes since the given RFC3339 timestamp, or null if unparseable.
+function ageMinutes(iso) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return (Date.now() - t) / 60000;
+}
+
+function relAge(mins) {
+  if (mins === null) return 'unknown';
+  if (mins < 1) return Math.max(0, Math.round(mins * 60)) + 's';
+  return mins.toFixed(1) + 'm';
+}
+
 // escHtml neutralizes agent-supplied strings (agent_id, tool names come from
 // POST /agents/register, which is unauthenticated by design) before they're
 // interpolated into innerHTML. Session IDs are server-generated, not attacker
@@ -315,13 +359,22 @@ function renderSwarm(g) {
     const p = pos[n.session_id];
     if (!p) return;
     const c = riskColor(n.risk_score || 0);
+    // Nodes idle 3+ minutes are very likely leftovers from an earlier, unrelated
+    // scenario run rather than part of the run currently on screen — fade them so
+    // the eye is drawn to what's actually live. Age still shown in the tooltip
+    // either way; nothing is hidden, just visually de-emphasized.
+    const idleMin = ageMinutes(n.updated_at);
+    const opacity = (idleMin !== null && idleMin >= 3) ? 0.35 : 1;
+    const label = shortLabel(n);
     // data-session (not an inline onclick) so an escaped-but-still-attacker-influenced
     // agent_id can never be interpreted as JS — see the delegated click handler below.
-    svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="' + r + '" fill="' + c + '" stroke="#0d1117" stroke-width="2" ' +
+    svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="' + r + '" fill="' + c + '" fill-opacity="' + opacity + '" stroke="#0d1117" stroke-width="2" ' +
            'style="cursor:pointer" data-session="' + escHtml(n.session_id) + '">' +
-           '<title>' + escHtml(n.session_id) + ' (' + escHtml(n.agent_id || 'unregistered') + ') risk=' + (n.risk_score || 0).toFixed(2) + '</title></circle>';
-    svg += '<text x="' + p.x + '" y="' + (p.y + r + 12) + '" text-anchor="middle" font-size="9" fill="#8b949e">' +
-           escHtml(n.session_id.substring(0, 10)) + '</text>';
+           '<title>' + escHtml(n.session_id) + ' (' + escHtml(n.agent_id || 'unregistered') + ') risk=' + (n.risk_score || 0).toFixed(2) +
+           ' · started ' + relAge(ageMinutes(n.created_at)) + ' ago · idle ' + relAge(idleMin) +
+           '</title></circle>';
+    svg += '<text x="' + p.x + '" y="' + (p.y + r + 12) + '" text-anchor="middle" font-size="9" fill="#8b949e" opacity="' + opacity + '">' +
+           escHtml(label) + '</text>';
   });
   svg += '</svg>';
 
