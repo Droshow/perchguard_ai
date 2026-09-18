@@ -110,10 +110,24 @@ class GovernedAgentLoop:
                 messages=messages,
             )
 
+            # Real usage from Anthropic's own response — attributed to only the
+            # first tool call admitted from this turn (usage is per API call, not
+            # per tool_use block; attaching it to every block in a multi-tool turn
+            # would double-count session cost).
+            usage_metadata: dict[str, str] = {}
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                usage_metadata = {
+                    "input_tokens": str(usage.input_tokens),
+                    "output_tokens": str(usage.output_tokens),
+                    "model": self.model,
+                }
+
             if response.stop_reason == "end_turn":
                 return _extract_text(response)
 
             tool_results = []
+            turn_usage_pending = usage_metadata
             for block in response.content:
                 if block.type != "tool_use":
                     continue
@@ -126,7 +140,9 @@ class GovernedAgentLoop:
                     uid=block.id,
                     tool_name=block.name,
                     parameters=block.input,
+                    metadata=turn_usage_pending or None,
                 )
+                turn_usage_pending = {}
                 if self.verbose:
                     print(
                         f"    {_symbol(decision.action)} INBOUND  [{block.name}] -> "
@@ -164,6 +180,12 @@ class GovernedAgentLoop:
                 tool_results.append(
                     {"type": "tool_result", "tool_use_id": block.id, "content": tool_output}
                 )
+
+            if not tool_results:
+                # stop_reason wasn't "end_turn" but the turn had no tool_use blocks
+                # (e.g. text-only response cut short) — nothing to feed back, and
+                # Anthropic's API rejects a user turn with empty content.
+                return _extract_text(response)
 
             messages.append({"role": "assistant", "content": response.content})
             messages.append({"role": "user", "content": tool_results})
