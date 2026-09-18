@@ -82,7 +82,7 @@ Agent endpoints (`/intercept`, `/validate/output`, `/agents/register`) are unaut
 | 6 | Open source polish | Shipped |
 | 7 | Productization | In progress |
 | 8 | Agentic compliance verticals (PSD2/Open Banking, EU AI Act, SOC2) | Not started |
-| 9 | Session cost telemetry | Partial — `cost_usd`/`tokens_used` columns shipped in `pkg/store/sqlite.go`, no dedicated branch |
+| 9 | Session cost telemetry | Partial — real usage now flows for the `GovernedAgentLoop` path: `sdk/python/perchguard/loop.py` reads Anthropic's `response.usage` and forwards `input_tokens`/`output_tokens` per turn to `/intercept`; `pkg/admission/quota/session_budget.go` prefers that over the old byte-length estimate and feeds both `/api/sessions/{id}/budget` and the `perchguard_tokens_used_total` Prometheus counter (previously defined but never incremented). Still open: the `/mcp` transparent-proxy path (`pkg/mcp/proxy.go`) still uses the old `len(bytes)/4` estimate (no `response.usage` visibility there by design); the final end-of-turn text-only response's tokens aren't tracked (no tool call to attach them to); several other fleet metrics (`RiskScoreGauge`, `DecisionsTotal`, `InterceptTotal`, etc.) are still defined but unwired — same class of gap, not fixed here, scope was tokens/cost only. |
 | 9b | Python agent SDK | Shipped (`sdk/python/perchguard/`, PR #1) |
 | 10a/10b/10c | K8s-native isolation operator (CRD, controller, EKS+Cilium) | Shipped — live-validated on EKS 2026-09-02, PR #3 fixed 3 bugs |
 | 10d | Shadow-to-enforce rollout | Partial — policy gap closed (`configs/policies.yaml` allowedDestinations) + Hubble enabled/live-verified on EKS; the actual burn-in-then-flip rollout procedure is not built |
