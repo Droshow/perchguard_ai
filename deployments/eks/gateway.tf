@@ -28,6 +28,18 @@ resource "null_resource" "gateway_api_crds" {
 # `alb.ingress.kubernetes.io/*` annotations (those are Ingress-only) — it
 # reads this CRD instead, referenced from the GatewayClass below. Without it
 # the ALB silently defaults to internal, no error, no warning.
+#
+# depends_on below does NOT by itself make this safe to apply in the same run
+# as helm_release.lbc: kubernetes_manifest fetches the CRD's OpenAPI schema at
+# PLAN time (to validate the GVK), which needs the CRD to already exist live in
+# the cluster — Terraform's dependency graph only orders APPLY-time execution,
+# it can't defer that plan-time schema fetch. Learned live 2026-09-11: a full
+# untargeted apply failed with "API did not recognize GroupVersionKind... no
+# matches for kind LoadBalancerConfiguration" even with depends_on set, because
+# helm_release.lbc hadn't been applied yet in that same run. Fix is staging —
+# see bootstrap.sh's Phase B, which now applies helm_release.lbc with -target
+# before the full apply, same reasoning as null_resource.gateway_api_crds two
+# blocks up.
 
 resource "kubernetes_manifest" "gateway_lb_config" {
   manifest = {
@@ -45,6 +57,7 @@ resource "kubernetes_manifest" "gateway_lb_config" {
   depends_on = [
     kubernetes_namespace.perchguard,
     null_resource.gateway_api_crds,
+    helm_release.lbc,
   ]
 }
 

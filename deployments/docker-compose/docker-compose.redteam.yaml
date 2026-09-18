@@ -29,7 +29,7 @@ services:
 
   redteam-mcp-agent:
     build:
-      context: ../redteam-mcp-agent
+      context: ../python-agents/redteam-mcp-agent
     env_file:
       - ../../.env
     environment:

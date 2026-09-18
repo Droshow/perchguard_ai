@@ -25,7 +25,7 @@ already on the proxy.
    want the iterate-until-done loop handled for you.
 2. **Transparent (MCP proxy)** — your agent talks to what looks like a normal
    MCP server; PerchGuard's proxy (`--mode=wrap`) intercepts underneath and your
-   agent code never mentions PerchGuard. See `deployments/healthcare-agent-python`
+   agent code never mentions PerchGuard. See `deployments/python-agents/healthcare-agent-python`
    for a live example. Nothing in this SDK is required for that pattern.
 
 ## Low-level client

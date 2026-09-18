@@ -100,6 +100,52 @@ def test_register_validation_error():
         pg.register(agent_id="a", agent_role="developer_agent", intent="")
 
 
+def test_register_delegation_requires_parent_token():
+    """register(parent_session_id=...) without parent_token must fail client-side —
+    the server can't tell a real delegation from an unverified claim without it
+    (pkg/api/agents.go), so don't even send the request."""
+    http = FakeHTTP()
+    pg = PerchGuardClient("http://localhost:8080", http=http)
+
+    with pytest.raises(PerchGuardConfigError):
+        pg.register(agent_id="child", agent_role="fraud_investigator", intent="x", parent_session_id="pg-parent-1")
+
+    assert http.calls == []  # no request sent
+
+
+def test_register_delegation_sends_parent_token_header():
+    http = FakeHTTP()
+    http.queue_post(make_registration_response(session_id="pg-child-1", agent_id="child"))
+    pg = PerchGuardClient("http://localhost:8080", http=http)
+
+    pg.register(
+        agent_id="child",
+        agent_role="fraud_investigator",
+        intent="x",
+        parent_session_id="pg-parent-1",
+        parent_token="pgat-parenttoken",
+    )
+
+    _, _, payload, headers = http.calls[-1]
+    assert payload["parent_session_id"] == "pg-parent-1"
+    assert headers["X-PerchGuard-Agent-Token"] == "pgat-parenttoken"
+
+
+def test_register_delegation_rejected_token_raises_auth_error():
+    http = FakeHTTP()
+    http.queue_post(FakeResponse(403, {"error": "parent session token verification failed"}))
+    pg = PerchGuardClient("http://localhost:8080", http=http)
+
+    with pytest.raises(PerchGuardAuthError, match="parent session token verification failed"):
+        pg.register(
+            agent_id="child",
+            agent_role="fraud_investigator",
+            intent="x",
+            parent_session_id="pg-parent-1",
+            parent_token="pgat-wrong",
+        )
+
+
 def test_register_transport_failure():
     http = FakeHTTP()
     http.queue_post(requests.ConnectionError("refused"))

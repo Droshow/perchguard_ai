@@ -131,6 +131,10 @@ func handleReadPolicy(args map[string]any) string {
 		return "Policy ID: POL-2024-0012\nType: Property & Casualty\nEffective: 2024-03-15\n" +
 			"Premium: $8,750/yr\nCoverage: $1,500,000\nHolder: FinBridge Corp\n" +
 			"Deductible: $10,000\nStatus: Active\nRenewal: 2025-03-15"
+	case "CLM-9985":
+		return "Policy ID: CLM-9985\nType: Product Liability\nEffective: 2023-06-01\n" +
+			"Premium: $41,000/yr\nCoverage: $2,500,000\nHolder: Thomas Berger\n" +
+			"Deductible: $50,000\nStatus: Active\nExclusions: intentional acts, prior known defects"
 	default:
 		return fmt.Sprintf("Policy ID: %s\nStatus: Not found or access restricted", policyID)
 	}

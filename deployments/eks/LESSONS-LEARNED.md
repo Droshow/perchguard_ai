@@ -194,6 +194,60 @@ cluster creation.
 
 ---
 
+## 11. `terraform destroy` orphans LBC-managed AWS resources if the node group dies first
+
+**What happened (2026-09-18 teardown):** A plain `terraform destroy` got stuck three
+separate times, each ~2-16 minutes, none with a useful error until the final one:
+
+1. `aws_internet_gateway.perchguard` hung "Still destroying" for 16 minutes with **no
+   error printed** — the AWS provider silently retries `DetachInternetGateway` on
+   `DependencyViolation`. Root cause: two load balancers (an ALB from the Gateway API
+   resource, an NLB from the `perchguard` Service) were still alive and holding ENIs in
+   the public subnets. The AWS Load Balancer Controller pods run on Fargate and survive
+   node group destruction, so in principle they should have cleaned these up — they
+   didn't, because `aws_eks_node_group.agent_workloads` was destroyed *before*
+   `kubernetes_manifest.gateway`/`helm_release.perchguard` in Terraform's graph, and
+   something about that ordering left the LBC's delete reconcile for the Gateway/Service
+   incomplete (finalizer never cleared, ALB/NLB never actually deleted by the controller).
+2. Terraform then errored outright on `kubernetes_manifest.gateway` ("Timed out waiting
+   for resource to be deleted", stuck on the `gateway.k8s.aws/alb` finalizer) and
+   `helm_release.perchguard` (uninstall `--wait` timeout — the release was actually
+   already gone; this one was a false alarm).
+3. Re-running destroy after manually fixing the above got stuck again:
+   `kubernetes_namespace.perchguard` wouldn't terminate (3 `targetgroupbindings.elbv2.k8s.aws`
+   + 1 `service` with LBC-owned finalizers), then `aws_vpc.perchguard` wouldn't delete
+   (3 security groups auto-created by the LBC controller for the ALB/NLB — never in
+   Terraform state, so `terraform destroy` can never remove them itself).
+
+**Fix applied each time — diagnose with AWS CLI/kubectl directly, don't just wait:**
+```bash
+# What's actually blocking an IGW/VPC delete:
+aws elbv2 describe-load-balancers --region eu-central-1
+aws ec2 describe-security-groups --region eu-central-1 --filters "Name=vpc-id,Values=<vpc-id>"
+
+# Clear a stuck namespace: find what still has finalizers
+kubectl get namespace <ns> -o json | jq '.status.conditions'
+kubectl get targetgroupbindings.elbv2.k8s.aws -n <ns>
+kubectl patch <resource> <name> -n <ns> --type=merge -p '{"metadata":{"finalizers":[]}}'
+
+# Orphaned LBC security groups terraform will never touch:
+aws ec2 delete-security-group --region eu-central-1 --group-id <sg-id>
+```
+Only strip a finalizer or delete an AWS resource by hand once you've confirmed via AWS
+CLI that the underlying resource it was guarding (the ALB/NLB) is already gone — otherwise
+you leak it.
+
+**Real fix, not yet applied:** destroy the AWS Load Balancer Controller's own resources
+(`helm_release.lbc`, the Gateway/Service, or at minimum give the controller a beat to
+finish its reconcile) **before** `aws_eks_node_group.agent_workloads`, so it can actually
+delete the ALB/NLB/security groups itself instead of leaving them orphaned for a human to
+clean up. Consider a `terraform destroy -target=...` pass for the Gateway/Service/helm
+release first, then a full `terraform destroy` for everything else.
+
+**Time lost:** ~25 min across three destroy attempts, all manual AWS CLI/kubectl cleanup.
+
+---
+
 ## Fast-path checklist for next deployment
 
 If running `bootstrap.sh` fresh:

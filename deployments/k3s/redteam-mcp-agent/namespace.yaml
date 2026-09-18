@@ -6,3 +6,4 @@ metadata:
     app.kubernetes.io/name: redteam-mcp-agent
     app.kubernetes.io/component: demo-agent
     perchguard/intercept: "true"
+    perchguard/sandbox: "kata"   # Phase 10e dogfood target

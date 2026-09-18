@@ -22,6 +22,7 @@ import (
 	"github.com/Droshow/PerchGuard/perchguard/pkg/admission"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/policy"
 	"github.com/Droshow/PerchGuard/perchguard/pkg/store"
+	"github.com/Droshow/PerchGuard/perchguard/pkg/telemetry"
 )
 
 // SessionState tracks cumulative resource usage for one agent session.
@@ -149,12 +150,30 @@ func (c *SessionBudgetChecker) Record(ctx context.Context, req *admission.ToolCa
 	state.ToolCallCount++
 	state.callTimestamps = append(state.callTimestamps, time.Now())
 
-	// Token count from metadata (set by mcp proxy estimator or agent framework).
-	if tokensStr, ok := req.Metadata["tokens_used"]; ok {
-		if tokens, err := strconv.Atoi(tokensStr); err == nil {
-			state.TokensConsumed += tokens
-			state.CostUSD += TokenCostUSD(tokens, req.Metadata["model"])
+	// Token count from metadata: either exact usage from the LLM provider's own
+	// response (input_tokens/output_tokens — set by GovernedAgentLoop from
+	// Anthropic's response.usage) or a request-size estimate (tokens_used — set by
+	// the /mcp transparent-proxy path, which has no visibility into the actual
+	// model response). Exact usage takes priority when both are somehow present.
+	var tokensThisCall int
+	var costThisCall float64
+	if inStr, ok := req.Metadata["input_tokens"]; ok {
+		inTokens, errIn := strconv.Atoi(inStr)
+		outTokens, errOut := strconv.Atoi(req.Metadata["output_tokens"])
+		if errIn == nil && errOut == nil {
+			tokensThisCall = inTokens + outTokens
+			costThisCall = TokenCostUSDExact(inTokens, outTokens, req.Metadata["model"])
 		}
+	} else if tokensStr, ok := req.Metadata["tokens_used"]; ok {
+		if tokens, err := strconv.Atoi(tokensStr); err == nil {
+			tokensThisCall = tokens
+			costThisCall = TokenCostUSD(tokens, req.Metadata["model"])
+		}
+	}
+	if tokensThisCall > 0 {
+		state.TokensConsumed += tokensThisCall
+		state.CostUSD += costThisCall
+		telemetry.TokensUsedTotal.WithLabelValues(req.SessionID, req.Metadata["model"]).Add(float64(tokensThisCall))
 	}
 
 	// Prune old timestamps to keep memory bounded

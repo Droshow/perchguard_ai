@@ -413,7 +413,7 @@ func main() {
 
 	// Management API server.
 	apiServer := api.NewAPIServer(memStore, auditRing, interceptor, fleetMgr, llmClient, &currentPolicy,
-		manifestStore, contextProvider, auditSink, keyStore, delegationStore, budgetChecker, sqliteSink)
+		manifestStore, contextProvider, auditSink, keyStore, delegationStore, budgetChecker, sqliteSink, lineageStore)
 
 	// Session reaper — evicts idle/overdue sessions and emits governance records for them.
 	idleLimit := time.Duration(cfg.Policies.SessionBudget.Limits.IdleTimeoutMinutes) * time.Minute

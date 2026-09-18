@@ -24,6 +24,12 @@ type AgentManifest struct {
 	// When set, PerchGuard validates that this agent's tool scope is a subset of
 	// the parent's and records the delegation chain for fleet visibility.
 	ParentSessionID string `yaml:"parent_session_id" json:"parent_session_id,omitempty"`
+	// InheritedDataRefs declares which of the parent session's DataRefOut values
+	// this agent is being handed. Only meaningful when ParentSessionID is set.
+	// Each ref is verified against the parent's own lineage graph at registration
+	// (see pkg/store.LineageStore.SeedInherited) before being trusted — a claim
+	// alone does not establish lineage.
+	InheritedDataRefs []string `yaml:"inherited_data_refs,omitempty" json:"inherited_data_refs,omitempty"`
 }
 
 // Metadata identifies the agent across registrations.

@@ -73,7 +73,7 @@ docker tag "perchguard-operator:latest" "${ECR_URL_OPERATOR}:latest"
 docker push "${ECR_URL_OPERATOR}:latest"
 echo "  Pushed: ${ECR_URL_OPERATOR}:latest"
 
-docker build -t "redteam-mcp-agent:latest" deployments/redteam-mcp-agent
+docker build -t "redteam-mcp-agent:latest" deployments/python-agents/redteam-mcp-agent
 docker tag "redteam-mcp-agent:latest" "${ECR_URL_REDTEAM}:latest"
 docker push "${ECR_URL_REDTEAM}:latest"
 echo "  Pushed: ${ECR_URL_REDTEAM}:latest"
@@ -112,14 +112,19 @@ kubectl --kubeconfig "${KUBECONFIG}" config view --raw >/dev/null
 kubectl --kubeconfig "${KUBECONFIG}" cluster-info >/dev/null
 echo "  KUBECONFIG=${KUBECONFIG} — validated."
 
-# Phase B: CoreDNS patch + Gateway API CRDs.
+# Phase B: CoreDNS patch + Gateway API CRDs + the LBC helm release.
 # kubernetes_manifest validates GVK at plan time — the CRDs must exist in the
 # cluster before we run the full apply, otherwise the plan fails with
-# "no matches for kind GatewayClass".
-echo "[4/5] Phase B — installing CoreDNS patch and Gateway API CRDs..."
+# "no matches for kind GatewayClass" (standard Gateway API CRDs) or
+# "no matches for kind LoadBalancerConfiguration in group gateway.k8s.aws"
+# (the LBC's own CRD, installed by helm_release.lbc — depends_on does NOT fix
+# this for kubernetes_manifest, since its plan-time schema fetch needs the CRD
+# to already exist live in the cluster regardless of the dependency graph).
+echo "[4/5] Phase B — installing CoreDNS patch, Gateway API CRDs, and the LBC..."
 terraform apply -input=false -auto-approve $TF_VARS \
   -target=null_resource.coredns_fargate_patch \
-  -target=null_resource.gateway_api_crds
+  -target=null_resource.gateway_api_crds \
+  -target=helm_release.lbc
 
 # Phase C: Full apply — all remaining resources (LBC, PerchGuard Helm, ADOT,
 # Gateway, HTTPRoutes, Cilium, the AgentIsolationPolicy CRD, the operator) now

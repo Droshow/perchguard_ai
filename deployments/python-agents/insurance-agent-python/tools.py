@@ -57,3 +57,30 @@ TOOL_DEFINITIONS = [
         },
     },
 ]
+
+ESCALATE_TOOL = {
+    "name": "escalate_to_investigator",
+    "description": "Hands off a suspicious claim to a fraud-investigator sub-agent for deeper review",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "claim_id": {"type": "string", "description": "Claim identifier, e.g. CLM-9985"},
+            "reason": {"type": "string", "description": "Why this claim looks suspicious"},
+        },
+        "required": ["claim_id", "reason"],
+    },
+}
+
+_BY_NAME = {t["name"]: t for t in TOOL_DEFINITIONS}
+
+INTAKE_TOOL_DEFINITIONS = [
+    _BY_NAME["read_policy"],
+    _BY_NAME["search_claims"],
+    ESCALATE_TOOL,
+]
+
+INVESTIGATOR_TOOL_DEFINITIONS = [
+    _BY_NAME["search_claims"],
+    _BY_NAME["run_sql"],
+    _BY_NAME["write_report"],
+]

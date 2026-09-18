@@ -1,0 +1,132 @@
+# Phase 10e — Kata Containers install DaemonSet + RuntimeClass.
+#
+# Scoped via nodeSelector to the metal-backed Kata node group only
+# (perchguard/kata-capable: "true" — see deployments/eks/kata.tf). That group
+# also carries perchguard/workload-class: isolated-agent so Cilium's existing
+# node affinity (cilium.tf) covers it too, without touching cilium.tf — both
+# containment layers stack on the same nodes. Kata needs real hardware
+# virtualization (/dev/kvm); it will not run on the existing t3.medium
+# `agent-workloads` node group (Phase 10c), which is why this is a *separate*
+# node group, not a resize of that one.
+#
+# Trimmed from upstream kata-containers/kata-deploy's reference manifests
+# (https://github.com/kata-containers/kata-containers/tree/main/tools/packaging/kata-deploy)
+# to the single kata-qemu shim this repo dogfoods on redteam-mcp-agent — not a
+# general-purpose reproduction of the full upstream install matrix.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kata-deploy
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kata-deploy
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch", "update", "watch"]
+  - apiGroups: ["node.k8s.io"]
+    resources: ["runtimeclasses"]
+    verbs: ["get", "list", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kata-deploy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kata-deploy
+subjects:
+  - kind: ServiceAccount
+    name: kata-deploy
+    namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kata-deploy
+  namespace: kube-system
+  labels:
+    app: kata-deploy
+spec:
+  selector:
+    matchLabels:
+      app: kata-deploy
+  template:
+    metadata:
+      labels:
+        app: kata-deploy
+    spec:
+      serviceAccountName: kata-deploy
+      nodeSelector:
+        perchguard/kata-capable: "true"
+      tolerations:
+        - key: perchguard.io/agent-workload   # shared with the isolated-agent group (Cilium)
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+        - key: perchguard.io/kata-workload    # Kata-specific
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      hostPID: true
+      containers:
+        - name: kata-deploy
+          image: quay.io/kata-containers/kata-deploy:stable
+          imagePullPolicy: Always
+          command: ["bash", "-c", "/opt/kata-artifacts/scripts/kata-deploy.sh install"]
+          lifecycle:
+            preStop:
+              exec:
+                command: ["bash", "-c", "/opt/kata-artifacts/scripts/kata-deploy.sh cleanup"]
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: crio-conf
+              mountPath: /etc/crio/
+            - name: containerd-conf
+              mountPath: /etc/containerd/
+            - name: kata-artifacts
+              mountPath: /opt/kata/
+            - name: dbus
+              mountPath: /var/run/dbus
+            - name: systemd
+              mountPath: /run/systemd
+      volumes:
+        - name: crio-conf
+          hostPath:
+            path: /etc/crio/
+        - name: containerd-conf
+          hostPath:
+            path: /etc/containerd/
+        - name: kata-artifacts
+          hostPath:
+            path: /opt/kata/
+            type: DirectoryOrCreate
+        - name: dbus
+          hostPath:
+            path: /var/run/dbus
+        - name: systemd
+          hostPath:
+            path: /run/systemd
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata-qemu
+handler: kata-qemu
+scheduling:
+  nodeSelector:
+    perchguard/kata-capable: "true"
+  tolerations:
+    - key: perchguard.io/agent-workload
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+    - key: perchguard.io/kata-workload
+      operator: Equal
+      value: "true"
+      effect: NoSchedule

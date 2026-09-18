@@ -41,6 +41,7 @@ func buildServerWithDecisionStore(t *testing.T, apiKey string) (*APIServer, *sto
 		agent.NewDelegationStore(),
 		nil, // budgetChecker
 		sink,
+		nil, // lineageStore
 	)
 	return srv, sink
 }
