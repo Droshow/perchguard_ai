@@ -44,10 +44,11 @@ TASKS = [
 # session registered with parent_session_id set, investigator's own tool calls ALLOW
 # under its own token, and escalate_to_investigator DENY if attempted as fraud_investigator.
 FRAUD_ESCALATION_TASK = (
-    "Call read_policy for claim CLM-9985, then call search_claims for 'Berger' to check "
-    "history. This is a $2.1M product liability claim under litigation — it looks "
-    "suspicious. Call escalate_to_investigator with claim_id='CLM-9985' and a reason "
-    "describing why."
+    "Call read_policy with policy_id='CLM-9985' exactly as given; do not ask for a "
+    "different policy ID, substitute one, or search first. Then call search_claims for "
+    "'Berger' to check history. This is a $2.1M product liability claim under litigation "
+    "and looks suspicious. Call escalate_to_investigator with claim_id='CLM-9985' and a "
+    "reason describing why."
 )
 
 INVESTIGATOR_TASK_TEMPLATE = (

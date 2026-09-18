@@ -2,16 +2,17 @@
 
 Same claim (CLM-9985, $2.1M product liability, in litigation — already in the mock
 MCP server's claim list) as the hand-wired 2-hop demo
-(deployments/insurance-agent-python/tasks.py's FRAUD_ESCALATION_TASK), extended
+(deployments/python-agents/insurance-agent-python/tasks.py's FRAUD_ESCALATION_TASK), extended
 into a real 5-role diamond: claims_intake fans out to fraud_investigator +
 compliance_reviewer concurrently, both join at senior_approver, which hands off to
 notifier.
 """
 
 INTAKE_TASK = (
-    "Call read_policy for claim CLM-9985, then call search_claims for 'Berger' to check "
-    "history. This is a $2.1M product liability claim under litigation. Summarise why it "
-    "needs deeper review."
+    "Call read_policy with policy_id='CLM-9985' first — use it exactly as given, do not "
+    "substitute or search first. Then call search_claims for 'Berger' to check history. "
+    "This is a $2.1M product liability claim under litigation. Summarise why it needs "
+    "deeper review, based only on the tool results — do not ask the user for any IDs."
 )
 
 INVESTIGATOR_TASK_TEMPLATE = (

@@ -1,6 +1,6 @@
 """Tool schemas for the LangGraph fraud-escalation graph (Phase 11).
 
-Same five tools deployments/insurance-mcp-server/main.go already implements
+Same five tools deployments/golang-agents/insurance-mcp-server/main.go already implements
 (read_policy, search_claims, write_report, run_sql, send_notification) — no MCP
 server changes needed. Each role gets the subset it actually uses in its own
 Claude tool-use loop; configs/policies.yaml's allowedTools ceilings (checked by

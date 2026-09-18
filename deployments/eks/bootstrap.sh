@@ -73,7 +73,7 @@ docker tag "perchguard-operator:latest" "${ECR_URL_OPERATOR}:latest"
 docker push "${ECR_URL_OPERATOR}:latest"
 echo "  Pushed: ${ECR_URL_OPERATOR}:latest"
 
-docker build -t "redteam-mcp-agent:latest" deployments/redteam-mcp-agent
+docker build -t "redteam-mcp-agent:latest" deployments/python-agents/redteam-mcp-agent
 docker tag "redteam-mcp-agent:latest" "${ECR_URL_REDTEAM}:latest"
 docker push "${ECR_URL_REDTEAM}:latest"
 echo "  Pushed: ${ECR_URL_REDTEAM}:latest"

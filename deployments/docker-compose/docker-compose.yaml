@@ -61,7 +61,7 @@ services:
 
   insurance-mcp-server:
     build:
-      context: ../insurance-mcp-server
+      context: ../golang-agents/insurance-mcp-server
     ports:
       - "8090:8090"          # exposed to host for manual curl testing
     environment:
@@ -71,7 +71,7 @@ services:
   insurance-agent-python:
     build:
       context: ../..         # repo root — picks up sdk/python for the perchguard SDK
-      dockerfile: deployments/insurance-agent-python/Dockerfile
+      dockerfile: deployments/python-agents/insurance-agent-python/Dockerfile
     command: sleep 3600    # keep container running for docker compose exec during demo
     depends_on:
       perchguard:
@@ -81,11 +81,11 @@ services:
     restart: unless-stopped
 
   # Phase 11: real LangGraph-orchestrated delegation graph (fan-out/fan-in), every
-  # hop governed by PerchGuard — see deployments/insurance-agent-langgraph/graph.py.
+  # hop governed by PerchGuard — see deployments/python-agents/insurance-agent-langgraph/graph.py.
   insurance-agent-langgraph:
     build:
       context: ../..         # repo root — picks up sdk/python for the perchguard SDK
-      dockerfile: deployments/insurance-agent-langgraph/Dockerfile
+      dockerfile: deployments/python-agents/insurance-agent-langgraph/Dockerfile
     command: sleep 3600    # keep container running for docker compose exec during demo
     depends_on:
       perchguard:
@@ -113,7 +113,7 @@ services:
 
   healthcare-mcp-server:
     build:
-      context: ../healthcare-mcp-server
+      context: ../golang-agents/healthcare-mcp-server
     ports:
       - "8091:8091"          # exposed to host for manual curl testing
     environment:
@@ -122,7 +122,7 @@ services:
 
   healthcare-agent-python:
     build:
-      context: ../healthcare-agent-python
+      context: ../python-agents/healthcare-agent-python
     env_file:
       - ../../.env           # provides ANTHROPIC_API_KEY_USED_BY_PERCHGUARD
     environment:

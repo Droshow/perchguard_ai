@@ -5,7 +5,7 @@
 //
 // Usage:
 //
-//	PERCHGUARD_URL=http://localhost:8080 go run deployments/insurance-agent/main.go
+//	PERCHGUARD_URL=http://localhost:8080 go run deployments/golang-agents/insurance-agent/main.go
 //
 // Each scenario has a comment explaining what threat it represents and
 // which pipeline layer is expected to catch it.

@@ -1,6 +1,6 @@
 """Bare JSON-RPC MCP client, orthogonal to governance.
 
-A near-verbatim port of deployments/insurance-agent-python/mcp_client.py.
+A near-verbatim port of deployments/python-agents/insurance-agent-python/mcp_client.py.
 Used internally by GovernedAgentLoop; also usable standalone by callers
 building a custom loop.
 """

@@ -150,7 +150,7 @@ policies:
       # fraud_investigator + compliance_reviewer concurrently, both join at
       # senior_approver, which hands off to notifier. See
       # sdk/python/perchguard/langgraph_adapter.py and
-      # deployments/insurance-agent-langgraph/.
+      # deployments/python-agents/insurance-agent-langgraph/.
       - role: "compliance_reviewer"
         allowedTools:
           - "read_policy"

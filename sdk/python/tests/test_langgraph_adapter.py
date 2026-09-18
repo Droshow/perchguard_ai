@@ -30,7 +30,7 @@ class DiamondState(TypedDict, total=False):
 class FakePGRegistry:
     """Stands in for the external PerchGuardClient governed_node registers/evicts
     through — distinct from GovernedAgentLoop's own internal client, matching how
-    the real demo app uses them (see deployments/insurance-agent-langgraph/).
+    the real demo app uses them (see deployments/python-agents/insurance-agent-langgraph/).
 
     Tracks which sessions are still live (registered, not yet evicted) and
     refuses to register a child against a parent that isn't — mirroring

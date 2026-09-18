@@ -7,10 +7,10 @@ WORKDIR /app
 COPY sdk/python /sdk/python
 RUN pip install --no-cache-dir /sdk/python
 
-COPY deployments/insurance-agent-langgraph/requirements.txt .
+COPY deployments/python-agents/insurance-agent-langgraph/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY deployments/insurance-agent-langgraph/ .
+COPY deployments/python-agents/insurance-agent-langgraph/ .
 
 # ANTHROPIC_API_KEY, PERCHGUARD_URL, MCP_URL injected at runtime via docker-compose env_file
 CMD ["python", "agent.py"]
