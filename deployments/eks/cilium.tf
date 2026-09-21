@@ -78,9 +78,50 @@ resource "helm_release" "cilium" {
     name  = "routingMode"
     value = "native"
   }
+  # Phase 10d: Hubble flow-log burn-in — this is what lets a namespace be
+  # observed for real egress needs before its AgentIsolationPolicy flips
+  # Observe -> Enforce, and what Phase 10f's cross-layer conformance job diffs
+  # against the app-layer's own audit denials. Relay only (no UI): the
+  # conformance job is the only Hubble client this repo ships.
   set {
     name  = "hubble.enabled"
-    value = "false"
+    value = "true"
+  }
+  set {
+    name  = "hubble.relay.enabled"
+    value = "true"
+  }
+  set {
+    name  = "hubble.metrics.enabled"
+    value = "{drop,flow}"
+  }
+  set {
+    name  = "hubble.metrics.enableOpenMetrics"
+    value = "true"
+  }
+
+  # hubble-relay is a Deployment, not the agent DaemonSet — it needs its own
+  # toleration for the same taint. Learned live 2026-09-11: cilium-system has
+  # no Fargate profile (cilium-operator's hostNetwork requirement, see the
+  # comment above), and the only real EC2 node is tainted
+  # perchguard.io/agent-workload — without this, hubble-relay has nowhere to
+  # schedule ("0/5 nodes are available", both Fargate and the EC2 node rejected).
+  set {
+    name  = "hubble.relay.tolerations[0].key"
+    value = "perchguard.io/agent-workload"
+  }
+  set {
+    name  = "hubble.relay.tolerations[0].operator"
+    value = "Equal"
+  }
+  set {
+    name  = "hubble.relay.tolerations[0].value"
+    value = "true"
+    type  = "string"
+  }
+  set {
+    name  = "hubble.relay.tolerations[0].effect"
+    value = "NoSchedule"
   }
 
   set {

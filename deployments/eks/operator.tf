@@ -67,6 +67,10 @@ resource "kubernetes_deployment" "perchguard_operator" {
             name           = "probes"
             container_port = 8081
           }
+          port {
+            name           = "webhook"
+            container_port = 9443
+          }
 
           env {
             name  = "PERCHGUARD_POLICY"
@@ -76,10 +80,27 @@ resource "kubernetes_deployment" "perchguard_operator" {
             name  = "PERCHGUARD_METRICS_ADDR"
             value = ":8081"
           }
+          env {
+            name  = "PERCHGUARD_WEBHOOK_PORT"
+            value = "9443"
+          }
+          env {
+            name  = "PERCHGUARD_WEBHOOK_CERT_DIR"
+            value = "/etc/perchguard-webhook-tls"
+          }
+          env {
+            name  = "PERCHGUARD_KATA_RUNTIME_CLASS"
+            value = "kata-qemu"
+          }
 
           volume_mount {
             name       = "policies"
             mount_path = "/etc/perchguard"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "webhook-tls"
+            mount_path = "/etc/perchguard-webhook-tls"
             read_only  = true
           }
 
@@ -124,6 +145,12 @@ resource "kubernetes_deployment" "perchguard_operator" {
             name = "perchguard-policies"
           }
         }
+        volume {
+          name = "webhook-tls"
+          secret {
+            secret_name = kubernetes_secret.perchguard_kata_webhook_tls.metadata[0].name
+          }
+        }
       }
     }
   }
@@ -132,5 +159,27 @@ resource "kubernetes_deployment" "perchguard_operator" {
     helm_release.perchguard,
     null_resource.agent_isolation_policy_crd,
     null_resource.perchguard_operator_rbac,
+    kubernetes_secret.perchguard_kata_webhook_tls,
   ]
+}
+
+# Phase 10e: exposes the operator's webhook port so the MutatingWebhookConfiguration's
+# clientConfig.service can resolve it — the operator had no in-cluster Service
+# before this, since it was never anything but a controller-runtime manager.
+resource "kubernetes_service" "perchguard_operator" {
+  metadata {
+    name      = "perchguard-operator"
+    namespace = kubernetes_namespace.perchguard.metadata[0].name
+    labels    = { "app.kubernetes.io/name" = "perchguard-operator" }
+  }
+
+  spec {
+    selector = { app = "perchguard-operator" }
+
+    port {
+      name        = "webhook"
+      port        = 9443
+      target_port = "webhook"
+    }
+  }
 }

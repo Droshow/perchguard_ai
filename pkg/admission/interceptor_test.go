@@ -29,15 +29,18 @@ func (m *mockMutator) Mutate(_ context.Context, _ *ToolCallAdmissionRequest) (*T
 }
 
 type mockQuota struct {
-	name      string
-	violation *PolicyViolation
+	name        string
+	violation   *PolicyViolation
+	recordCalls int
+	usageCalls  int
 }
 
 func (m *mockQuota) Name() string { return m.name }
 func (m *mockQuota) Check(_ context.Context, _ *ToolCallAdmissionRequest) *PolicyViolation {
 	return m.violation
 }
-func (m *mockQuota) Record(_ context.Context, _ *ToolCallAdmissionRequest) {}
+func (m *mockQuota) Record(_ context.Context, _ *ToolCallAdmissionRequest)      { m.recordCalls++ }
+func (m *mockQuota) RecordUsage(_ context.Context, _ *ToolCallAdmissionRequest) { m.usageCalls++ }
 
 type mockDispatcher struct {
 	approved bool
@@ -149,6 +152,47 @@ func TestInterceptor_Intercept(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestInterceptor_RecordUsage_OnBlockedCalls guards against real Anthropic
+// spend being silently dropped when a call is blocked: RecordUsage must fire
+// on every exit path (quota TERMINATE, validator DENY), not only when the
+// full pipeline passes and Record is called.
+func TestInterceptor_RecordUsage_OnBlockedCalls(t *testing.T) {
+	highViol := &PolicyViolation{Layer: "validation", Policy: "test", Detail: "blocked", Severity: "high"}
+
+	t.Run("quota TERMINATE still records usage", func(t *testing.T) {
+		q := &mockQuota{violation: highViol}
+		i := NewInterceptor(nil, nil, []QuotaChecker{q}, nil)
+		i.Intercept(context.Background(), makeInboundReq())
+		if q.usageCalls != 1 {
+			t.Errorf("want RecordUsage called once, got %d", q.usageCalls)
+		}
+		if q.recordCalls != 0 {
+			t.Errorf("want Record not called on a blocked path, got %d", q.recordCalls)
+		}
+	})
+
+	t.Run("validator DENY still records usage", func(t *testing.T) {
+		q := &mockQuota{}
+		i := NewInterceptor([]Validator{&mockValidator{violation: highViol}}, nil, []QuotaChecker{q}, nil)
+		i.Intercept(context.Background(), makeInboundReq())
+		if q.usageCalls != 1 {
+			t.Errorf("want RecordUsage called once, got %d", q.usageCalls)
+		}
+		if q.recordCalls != 0 {
+			t.Errorf("want Record not called on a blocked path, got %d", q.recordCalls)
+		}
+	})
+
+	t.Run("allowed call records both", func(t *testing.T) {
+		q := &mockQuota{}
+		i := NewInterceptor(nil, nil, []QuotaChecker{q}, nil)
+		i.Intercept(context.Background(), makeInboundReq())
+		if q.recordCalls != 1 {
+			t.Errorf("want Record called once, got %d", q.recordCalls)
+		}
+	})
 }
 
 func TestInterceptor_InterceptOutput(t *testing.T) {

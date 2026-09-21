@@ -51,3 +51,23 @@ variable "agent_node_desired_size" {
   type        = number
   default     = 1
 }
+
+# ─── Phase 10e: Kata sandbox node group ──────────────────────────────────────
+# Kata needs real hardware virtualization (/dev/kvm), which no Nitro
+# non-.metal instance type exposes to the guest — the existing t3.medium
+# agent-workloads group structurally cannot run it. .metal is real money
+# (~$4/hr for c5.metal on-demand); desired size defaults to 0 so this group
+# costs nothing until deliberately scaled up for a validation run, then back
+# down — same live-validate-then-tear-down pattern as the rest of Phase 10.
+
+variable "kata_node_instance_type" {
+  description = "Bare-metal EC2 instance type for the Kata-capable node group (Phase 10e). Must be a .metal type — Kata requires /dev/kvm."
+  type        = string
+  default     = "c5.metal"
+}
+
+variable "kata_node_desired_size" {
+  description = "Desired node count for the Kata sandbox node group (Phase 10e). Defaults to 0 — scale up only for an active validation run."
+  type        = number
+  default     = 0
+}

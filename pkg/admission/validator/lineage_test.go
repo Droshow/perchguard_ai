@@ -136,6 +136,34 @@ func TestLineageValidator_ReadSummariseEmailChain(t *testing.T) {
 	}
 }
 
+// TestLineageValidator_InheritedRef_CrossSessionExfiltration_HumanReview closes the
+// gap SeedInherited exists to fix: a parent produces sensitive data, hands it to a
+// delegated sub-agent (via a verified InheritedDataRefs claim at registration — see
+// pkg/api/agents.go), and the sub-agent immediately exfiltrates it. Before
+// SeedInherited, the child's graph started empty and this chain was invisible.
+func TestLineageValidator_InheritedRef_CrossSessionExfiltration_HumanReview(t *testing.T) {
+	ls := store.NewLineageStore()
+	v := NewLineageValidator(ls)
+
+	// Parent session produces sensitive data.
+	v.Validate(context.Background(), makeReq("parent-sess", "uid-1", "get_patient_record", nil, ""))
+	refA := store.LineageRef("parent-sess", "uid-1")
+
+	// Registration-time step (normally pkg/api/agents.go, after verifying the claim
+	// against the parent's own graph): seed the child with the inherited ref.
+	ls.SeedInherited("child-sess", ls.Graph("parent-sess"), []string{refA})
+
+	// Child immediately exfiltrates the inherited ref.
+	req := makeReq("child-sess", "uid-2", "send_email", []string{refA}, "")
+	viol := v.Validate(context.Background(), req)
+	if viol == nil {
+		t.Fatal("want HUMAN_REVIEW: child session exfiltrating data inherited from its parent, got nil")
+	}
+	if viol.Decision != admission.DecisionHumanReview {
+		t.Errorf("want HUMAN_REVIEW, got %s", viol.Decision)
+	}
+}
+
 func TestLineageValidator_SessionIsolation(t *testing.T) {
 	ls := store.NewLineageStore()
 	v := NewLineageValidator(ls)

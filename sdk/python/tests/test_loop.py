@@ -148,6 +148,27 @@ def test_run_reuses_caller_supplied_session_without_evicting():
     assert loop.pg.evicted == []  # ...and must not evict it either
 
 
+def test_run_routes_local_tool_and_bypasses_mcp():
+    tool_block = FakeBlock("tool_use", id="t1", name="my_tool", input={"x": 1})
+    responses = [
+        FakeResponse("tool_use", [tool_block]),
+        FakeResponse("end_turn", [FakeBlock("text", text="done")]),
+    ]
+    loop = _make_loop(
+        responses,
+        intercept_decisions=[Decision(action=Action.ALLOW, reason="ok")],
+        output_decisions=[Decision(action=Action.ALLOW, reason="ok")],
+    )
+    calls = []
+    loop.local_tools = {"my_tool": lambda params: calls.append(params) or "local result"}
+
+    result = loop.run(task="use local tool", agent_id="test-agent", agent_role="developer_agent", tools=[])
+
+    assert result == "done"
+    assert calls == [{"x": 1}]
+    assert loop.mcp.calls == []  # MCP bypassed for the local tool
+
+
 def test_run_hits_max_iterations_ceiling():
     tool_block = FakeBlock("tool_use", id="t1", name="loop_tool", input={})
     responses = [FakeResponse("tool_use", [tool_block]) for _ in range(3)]

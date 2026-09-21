@@ -99,6 +99,47 @@ func TestSessionBudgetChecker_CostCapEnforced(t *testing.T) {
 	}
 }
 
+func TestSessionBudgetChecker_InvalidInputTokensFallsBackToTokensUsed(t *testing.T) {
+	c := NewSessionBudgetChecker(newBudgetPolicy(100, 1_000_000, 10.0), nil)
+	req := &admission.ToolCallAdmissionRequest{
+		SessionID: "s4",
+		ToolCall:  admission.ToolCall{Name: "read_file"},
+		Metadata: map[string]string{
+			"input_tokens":  "", // present but unparseable
+			"output_tokens": "",
+			"tokens_used":   "500",
+			"model":         "claude-sonnet-4-6",
+		},
+	}
+	c.Record(context.Background(), req)
+
+	snap, ok := c.Snapshot("s4")
+	if !ok {
+		t.Fatal("expected snapshot, got false")
+	}
+	if snap.EstTokens != 500 {
+		t.Errorf("want fallback to tokens_used (500), got %d", snap.EstTokens)
+	}
+}
+
+func TestSessionBudgetChecker_RecordUsage_IndependentOfRecord(t *testing.T) {
+	c := NewSessionBudgetChecker(newBudgetPolicy(100, 1_000_000, 10.0), nil)
+	req := reqWithTokens("s5", "claude-sonnet-4-6", 1000)
+
+	c.RecordUsage(context.Background(), req)
+
+	snap, ok := c.Snapshot("s5")
+	if !ok {
+		t.Fatal("expected snapshot, got false")
+	}
+	if snap.EstTokens != 1000 {
+		t.Errorf("want 1000 tokens tracked via RecordUsage alone, got %d", snap.EstTokens)
+	}
+	if snap.ToolCalls != 0 {
+		t.Errorf("want RecordUsage to not increment ToolCallCount, got %d", snap.ToolCalls)
+	}
+}
+
 func TestDepthLimiter(t *testing.T) {
 	tests := []struct {
 		name    string

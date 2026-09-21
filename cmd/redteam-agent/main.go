@@ -246,13 +246,27 @@ func simulateTool(name string, params map[string]any) string {
 
 // registerAgent calls POST /agents/register and returns the session ID and token.
 // Returns empty strings and logs a warning on failure (non-fatal — harness continues).
-func registerAgent(client *http.Client, baseURL string, m agentManifest) (sessionID, token string) {
+//
+// parentToken must be the parent session's own token whenever m.ParentSessionID is
+// set — pkg/api/agents.go now requires proof of that token via X-PerchGuard-Agent-Token
+// before recording a delegation edge; without it the server 403s instead of applying
+// the scope check.
+func registerAgent(client *http.Client, baseURL string, m agentManifest, parentToken string) (sessionID, token string) {
 	body, err := json.Marshal(m)
 	if err != nil {
 		log.Printf("[redteam] manifest marshal error: %v", err)
 		return
 	}
-	resp, err := client.Post(baseURL+"/agents/register", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/agents/register", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("[redteam] register request error: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if parentToken != "" {
+		req.Header.Set("X-PerchGuard-Agent-Token", parentToken)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("[redteam] register error: %v", err)
 		return
@@ -368,7 +382,7 @@ func runLineage(client *http.Client, baseURL, apiKey string) {
 			OutOfScope: []string{"send external communications"},
 		},
 		Authorization: manifestAuth{Role: "read_only_agent"},
-	})
+	}, "")
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("lineage-%d", time.Now().UnixNano())
 	}
@@ -437,15 +451,16 @@ func runDelegation(client *http.Client, baseURL, apiKey string) {
 			Scope:   []string{"read claims", "approve claims", "dispatch sub-agents"},
 		},
 		Authorization: manifestAuth{Role: "claims_adjuster"},
-	})
+	}, "")
 	if parentID == "" {
 		log.Println("[redteam][delegation] parent registration failed — aborting")
 		return
 	}
 	log.Printf("[redteam][delegation] parent session=%s", parentID)
-	_ = parentToken
 
-	// Step 2: Register valid child (read_only_agent ⊆ claims_adjuster).
+	// Step 2: Register valid child (read_only_agent ⊆ claims_adjuster). Must present
+	// the parent's own token — pkg/api/agents.go now requires proof of it before
+	// recording the delegation edge.
 	childID, childToken := registerAgent(client, baseURL, agentManifest{
 		APIVersion:      "perchguard/v1",
 		Kind:            "AgentManifest",
@@ -453,14 +468,16 @@ func runDelegation(client *http.Client, baseURL, apiKey string) {
 		Mission:         manifestMission{Summary: "Triage urgent claims flagged by orchestrator"},
 		Authorization:   manifestAuth{Role: "read_only_agent"},
 		ParentSessionID: parentID,
-	})
+	}, parentToken)
 	if childID != "" {
 		log.Printf("[redteam][delegation] ✓ valid child registered: session=%s (scope subset accepted)", childID)
 	} else {
 		log.Println("[redteam][delegation] ✗ valid child registration failed unexpectedly")
 	}
 
-	// Step 3: Try to register malicious child with wider scope.
+	// Step 3: Try to register malicious child with wider scope. Presents a genuinely
+	// valid parent token — the token gate isn't what's under test here, ValidateScope
+	// is, so this must clear the token check to actually exercise the scope rejection.
 	log.Println("[redteam][delegation] attempting malicious child (bash_agent — wider than parent) ...")
 	body, _ := json.Marshal(agentManifest{
 		APIVersion:      "perchguard/v1",
@@ -470,7 +487,14 @@ func runDelegation(client *http.Client, baseURL, apiKey string) {
 		Authorization:   manifestAuth{Role: "bash_agent"},
 		ParentSessionID: parentID,
 	})
-	resp, err := client.Post(baseURL+"/agents/register", "application/json", bytes.NewReader(body))
+	maliciousReq, err := http.NewRequest(http.MethodPost, baseURL+"/agents/register", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("[redteam][delegation] malicious request build error: %v", err)
+		return
+	}
+	maliciousReq.Header.Set("Content-Type", "application/json")
+	maliciousReq.Header.Set("X-PerchGuard-Agent-Token", parentToken)
+	resp, err := client.Do(maliciousReq)
 	if err != nil {
 		log.Printf("[redteam][delegation] malicious registration error: %v", err)
 	} else {
@@ -537,7 +561,7 @@ func runVelocity(client *http.Client, baseURL, apiKey string) {
 			Scope:   []string{"read policy"},
 		},
 		Authorization: manifestAuth{Role: "read_only_agent"},
-	})
+	}, "")
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("velocity-%d", time.Now().UnixNano())
 	}
@@ -587,7 +611,7 @@ func runClaudeScenario(sc scenario, httpClient *http.Client, ctx context.Context
 			Scope:   []string{"read claims", "read policy"},
 		},
 		Authorization: manifestAuth{Role: sc.role},
-	})
+	}, "")
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("redteam-%s-%d", sc.name, time.Now().UnixNano())
 	}

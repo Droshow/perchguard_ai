@@ -30,14 +30,25 @@ spec:
           ports:
             - name: probes
               containerPort: 8081
+            - name: webhook
+              containerPort: 9443
           env:
             - name: PERCHGUARD_POLICY
               value: /etc/perchguard/policies.yaml
             - name: PERCHGUARD_METRICS_ADDR
               value: ":8081"
+            - name: PERCHGUARD_WEBHOOK_PORT
+              value: "9443"
+            - name: PERCHGUARD_WEBHOOK_CERT_DIR
+              value: /etc/perchguard-webhook-tls
+            - name: PERCHGUARD_KATA_RUNTIME_CLASS
+              value: kata-qemu
           volumeMounts:
             - name: policies
               mountPath: /etc/perchguard
+              readOnly: true
+            - name: webhook-tls
+              mountPath: /etc/perchguard-webhook-tls
               readOnly: true
           livenessProbe:
             httpGet:
@@ -67,3 +78,21 @@ spec:
         - name: policies
           configMap:
             name: perchguard-policies
+        - name: webhook-tls
+          secret:
+            secretName: perchguard-kata-webhook-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: perchguard-operator
+  namespace: perchguard
+  labels:
+    app.kubernetes.io/name: perchguard-operator
+spec:
+  selector:
+    app: perchguard-operator
+  ports:
+    - name: webhook
+      port: 9443
+      targetPort: webhook

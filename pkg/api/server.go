@@ -34,6 +34,7 @@ type APIServer struct {
 	budgetChecker   *quota.SessionBudgetChecker // nil when sessionBudget.enabled is false
 	reviewStore     *review.Store               // in-process HITL pending review registry
 	decisionStore   *store.SQLiteAuditSink      // durable per-decision store; nil when SQLite is unavailable
+	lineageStore    *store.LineageStore         // data-provenance graph; nil-safe, used by GET /api/swarm
 }
 
 // NewAPIServer wires up the management API.
@@ -53,6 +54,7 @@ func NewAPIServer(
 	delegationStore *agent.DelegationStore,
 	budgetChecker *quota.SessionBudgetChecker,
 	decisionStore *store.SQLiteAuditSink,
+	lineageStore *store.LineageStore,
 ) *APIServer {
 	return &APIServer{
 		sessions:        sessions,
@@ -69,6 +71,7 @@ func NewAPIServer(
 		budgetChecker:   budgetChecker,
 		reviewStore:     review.NewStore(),
 		decisionStore:   decisionStore,
+		lineageStore:    lineageStore,
 	}
 }
 
@@ -87,6 +90,7 @@ func (s *APIServer) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/stats", guard(http.HandlerFunc(s.getStats)))
 	mux.Handle("POST /api/query", guard(http.HandlerFunc(s.queryLLM)))
 	mux.Handle("GET /api/fleet/summary", guard(http.HandlerFunc(s.getFleetSummary)))
+	mux.Handle("GET /api/swarm", guard(http.HandlerFunc(s.getSwarmGraph)))
 	mux.Handle("GET /api/keys", guard(http.HandlerFunc(s.listKeys)))
 	mux.Handle("POST /api/keys/rotate", guard(http.HandlerFunc(s.rotateKey)))
 	mux.HandleFunc("POST /agents/register", s.registerAgent)

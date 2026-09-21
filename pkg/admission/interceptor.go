@@ -40,6 +40,10 @@ type QuotaChecker interface {
 	Name() string
 	Check(ctx context.Context, req *ToolCallAdmissionRequest) *PolicyViolation
 	Record(ctx context.Context, req *ToolCallAdmissionRequest)
+	// RecordUsage tracks real/estimated token+cost usage independent of the
+	// call's admission decision — an LLM turn is billed whether or not
+	// PerchGuard allows the resulting tool call.
+	RecordUsage(ctx context.Context, req *ToolCallAdmissionRequest)
 }
 
 // AuditLogger writes admission decisions to the audit trail.
@@ -213,6 +217,9 @@ func (i *Interceptor) Intercept(ctx context.Context, req *ToolCallAdmissionReque
 			resp.DataRefOut = dataRefOut
 			span.SetAttributes(attribute.String("decision", string(DecisionTerminate)))
 			span.SetStatus(codes.Error, resp.Reason)
+			for _, rq := range quotas {
+				rq.RecordUsage(ctx, req)
+			}
 			i.audit(req, resp, start)
 			return resp
 		}
@@ -277,6 +284,9 @@ func (i *Interceptor) Intercept(ctx context.Context, req *ToolCallAdmissionReque
 					}
 				}
 			}
+		}
+		for _, q := range quotas {
+			q.RecordUsage(ctx, req)
 		}
 		attachRisk(validators, req.SessionID, resp)
 		attachDrift(validators, req.SessionID, resp)

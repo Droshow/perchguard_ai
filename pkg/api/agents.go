@@ -54,8 +54,12 @@ func (s *APIServer) registerAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delegation: if parent_session_id is set, validate that this child's tool scope
-	// is a subset of the parent's scope before allowing the registration.
+	// Delegation: if parent_session_id is set, the caller must prove possession of
+	// that session's own token before we record it as a parent — otherwise
+	// parent_session_id is just a claim, and a delegation chain built on unverified
+	// claims (e.g. an orchestration layer relaying ids through mutable shared state)
+	// lets a registration assert any lineage it likes. Verify() is the same
+	// constant-time check /intercept already applies to this header.
 	if m.ParentSessionID != "" {
 		if s.manifestStore == nil {
 			writeError(w, http.StatusBadRequest, "delegation requires manifest store")
@@ -66,6 +70,11 @@ func (s *APIServer) registerAgent(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "parent_session_id not found or expired")
 			return
 		}
+		parentToken := r.Header.Get("X-PerchGuard-Agent-Token")
+		if parentToken == "" || !s.manifestStore.Verify(m.ParentSessionID, parentReg.Manifest.Metadata.ID, parentToken) {
+			writeError(w, http.StatusForbidden, "parent session token verification failed")
+			return
+		}
 		if lr := s.policyMeta.Load(); lr != nil {
 			if err := agent.ValidateScope(m, parentReg.Manifest, lr.Config); err != nil {
 				writeError(w, http.StatusBadRequest, "delegation scope violation: "+err.Error())
@@ -74,6 +83,30 @@ func (s *APIServer) registerAgent(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.delegationStore != nil {
 			s.delegationStore.Record(sessionID, m.ParentSessionID)
+		}
+
+		// InheritedDataRefs is a claim about lineage, not a fact — verify each ref
+		// actually exists in the parent's own lineage graph before trusting it.
+		// Without this check, a sub-agent could assert it received arbitrary data
+		// (including data the parent never produced) and use that false lineage
+		// to launder an exfiltration path around the DataExfiltrationValidator.
+		if len(m.InheritedDataRefs) > 0 {
+			if s.lineageStore == nil {
+				writeError(w, http.StatusBadRequest, "inherited_data_refs requires lineage tracking to be enabled")
+				return
+			}
+			parentGraph := s.lineageStore.Graph(m.ParentSessionID)
+			for _, ref := range m.InheritedDataRefs {
+				if parentGraph == nil {
+					writeError(w, http.StatusBadRequest, "inherited_data_refs claims ref \""+ref+"\" but parent session has no lineage graph")
+					return
+				}
+				if _, _, ok := parentGraph.Producer(ref); !ok {
+					writeError(w, http.StatusBadRequest, "inherited_data_refs claims ref \""+ref+"\" not produced by parent session")
+					return
+				}
+			}
+			s.lineageStore.SeedInherited(sessionID, parentGraph, m.InheritedDataRefs)
 		}
 	}
 

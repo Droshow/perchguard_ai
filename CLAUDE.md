@@ -81,8 +81,14 @@ Agent endpoints (`/intercept`, `/validate/output`, `/agents/register`) are unaut
 | 5 | Adversarial validation | Shipped |
 | 6 | Open source polish | Shipped |
 | 7 | Productization | In progress |
-| 10a/10b | K8s-native isolation operator | **Current priority** |
-| 11 | Multi-agent delegation showcase (LangGraph) | Approved, deprioritized behind Phase 10 |
+| 8 | Agentic compliance verticals (PSD2/Open Banking, EU AI Act, SOC2) | Not started |
+| 9 | Session cost telemetry | Partial — real usage now flows for the `GovernedAgentLoop` path: `sdk/python/perchguard/loop.py` reads Anthropic's `response.usage` and forwards `input_tokens`/`output_tokens` per turn to `/intercept`; `pkg/admission/quota/session_budget.go` prefers that over the old byte-length estimate and feeds both `/api/sessions/{id}/budget` and the `perchguard_tokens_used_total` Prometheus counter (previously defined but never incremented). Still open: the `/mcp` transparent-proxy path (`pkg/mcp/proxy.go`) still uses the old `len(bytes)/4` estimate (no `response.usage` visibility there by design); the final end-of-turn text-only response's tokens aren't tracked (no tool call to attach them to); several other fleet metrics (`RiskScoreGauge`, `DecisionsTotal`, `InterceptTotal`, etc.) are still defined but unwired — same class of gap, not fixed here, scope was tokens/cost only. |
+| 9b | Python agent SDK | Shipped (`sdk/python/perchguard/`, PR #1) |
+| 10a/10b/10c | K8s-native isolation operator (CRD, controller, EKS+Cilium) | Shipped — live-validated on EKS 2026-09-02, PR #3 fixed 3 bugs |
+| 10d | Shadow-to-enforce rollout | Partial — policy gap closed (`configs/policies.yaml` allowedDestinations) + Hubble enabled/live-verified on EKS; the actual burn-in-then-flip rollout procedure is not built |
+| 10e | Kata sandbox layer | Code complete, deployed live on EKS 2026-09-11 (webhook, DaemonSet, RuntimeClass, node group, TLS all applied without error) — kata-sandbox node group never scaled above 0, so kata-deploy's install has never actually run on a real node |
+| 10f | Cross-layer conformance | Code written (`scripts/cross-layer-conformance.sh`, containment test pods, `kata-containment-check.sh`), never executed — depends on 10d/10e's live state |
+| 11 | Multi-agent delegation showcase | Code complete (`sdk/python/perchguard/loop.py` local_tools routing, fraud-escalation scenario) — unit-tested only, no live run against real Claude (no API key in dev env) |
 
 See `artifacts/docs/PHASE5-ADVERSARIAL-VALIDATION.md`, `PHASE6-OPEN-SOURCE-POLISH.md`, and
 `PHASE10-K8S-ISOLATION-OPERATOR.md` ("Why this is priority #1") for the current sequencing
