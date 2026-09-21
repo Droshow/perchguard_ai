@@ -149,32 +149,7 @@ func (c *SessionBudgetChecker) Record(ctx context.Context, req *admission.ToolCa
 
 	state.ToolCallCount++
 	state.callTimestamps = append(state.callTimestamps, time.Now())
-
-	// Token count from metadata: either exact usage from the LLM provider's own
-	// response (input_tokens/output_tokens — set by GovernedAgentLoop from
-	// Anthropic's response.usage) or a request-size estimate (tokens_used — set by
-	// the /mcp transparent-proxy path, which has no visibility into the actual
-	// model response). Exact usage takes priority when both are somehow present.
-	var tokensThisCall int
-	var costThisCall float64
-	if inStr, ok := req.Metadata["input_tokens"]; ok {
-		inTokens, errIn := strconv.Atoi(inStr)
-		outTokens, errOut := strconv.Atoi(req.Metadata["output_tokens"])
-		if errIn == nil && errOut == nil {
-			tokensThisCall = inTokens + outTokens
-			costThisCall = TokenCostUSDExact(inTokens, outTokens, req.Metadata["model"])
-		}
-	} else if tokensStr, ok := req.Metadata["tokens_used"]; ok {
-		if tokens, err := strconv.Atoi(tokensStr); err == nil {
-			tokensThisCall = tokens
-			costThisCall = TokenCostUSD(tokens, req.Metadata["model"])
-		}
-	}
-	if tokensThisCall > 0 {
-		state.TokensConsumed += tokensThisCall
-		state.CostUSD += costThisCall
-		telemetry.TokensUsedTotal.WithLabelValues(req.SessionID, req.Metadata["model"]).Add(float64(tokensThisCall))
-	}
+	c.recordUsageLocked(state, req)
 
 	// Prune old timestamps to keep memory bounded
 	oneMinuteAgo := time.Now().Add(-time.Minute)
@@ -185,6 +160,56 @@ func (c *SessionBudgetChecker) Record(ctx context.Context, req *admission.ToolCa
 		}
 	}
 	state.callTimestamps = pruned
+}
+
+// RecordUsage tracks real/estimated token and cost usage for a call
+// independent of whether the call was allowed. Anthropic bills a turn's
+// usage the moment the API call happens, regardless of PerchGuard's
+// admission decision — the Interceptor calls this on every exit path
+// (quota-denied, validator-denied, human-review-denied, and allowed) so a
+// blocked call doesn't silently drop the spend that already occurred.
+func (c *SessionBudgetChecker) RecordUsage(ctx context.Context, req *admission.ToolCallAdmissionRequest) {
+	if !c.policy.Enabled {
+		return
+	}
+	state := c.getOrCreateSession(req.SessionID)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	c.recordUsageLocked(state, req)
+}
+
+// recordUsageLocked accumulates token/cost usage onto state. Caller must
+// hold state.mu.
+func (c *SessionBudgetChecker) recordUsageLocked(state *SessionState, req *admission.ToolCallAdmissionRequest) {
+	// Token count from metadata: either exact usage from the LLM provider's own
+	// response (input_tokens/output_tokens — set by GovernedAgentLoop from
+	// Anthropic's response.usage) or a request-size estimate (tokens_used — set by
+	// the /mcp transparent-proxy path, which has no visibility into the actual
+	// model response). Exact usage takes priority; if input_tokens is present
+	// but fails to parse, fall back to tokens_used rather than dropping usage.
+	var tokensThisCall int
+	var costThisCall float64
+	if inStr, ok := req.Metadata["input_tokens"]; ok {
+		inTokens, errIn := strconv.Atoi(inStr)
+		outTokens, errOut := strconv.Atoi(req.Metadata["output_tokens"])
+		if errIn == nil && errOut == nil {
+			tokensThisCall = inTokens + outTokens
+			costThisCall = TokenCostUSDExact(inTokens, outTokens, req.Metadata["model"])
+		}
+	}
+	if tokensThisCall == 0 {
+		if tokensStr, ok := req.Metadata["tokens_used"]; ok {
+			if tokens, err := strconv.Atoi(tokensStr); err == nil {
+				tokensThisCall = tokens
+				costThisCall = TokenCostUSD(tokens, req.Metadata["model"])
+			}
+		}
+	}
+	if tokensThisCall > 0 {
+		state.TokensConsumed += tokensThisCall
+		state.CostUSD += costThisCall
+		telemetry.TokensUsedTotal.WithLabelValues(state.SessionID, req.Metadata["model"]).Add(float64(tokensThisCall))
+	}
 }
 
 func (c *SessionBudgetChecker) getOrCreateSession(sessionID string) *SessionState {
@@ -278,4 +303,8 @@ func (d *DepthLimiter) Check(ctx context.Context, req *admission.ToolCallAdmissi
 
 func (d *DepthLimiter) Record(ctx context.Context, req *admission.ToolCallAdmissionRequest) {
 	// Depth is tracked by the agent framework, not by PerchGuard
+}
+
+func (d *DepthLimiter) RecordUsage(ctx context.Context, req *admission.ToolCallAdmissionRequest) {
+	// No token/cost concept for depth limiting.
 }
