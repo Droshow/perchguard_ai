@@ -1,13 +1,31 @@
 # PerchGuard
 
-**The missing governance layer for AI agents.**
+**Reliability engineering for AI agents.**
 
-PerchGuard applies the Kubernetes **admit / deny / mutate** pattern to every tool call an AI agent tries to execute. Just as you wouldn't run a cluster without an admission controller, you shouldn't run autonomous agents without PerchGuard.
+Agents are production systems, and when they act on infrastructure they are
+also a new source of change. PerchGuard applies SRE discipline to both: SLOs
+and error budgets for how agents behave, and change management (admission,
+blast-radius limits, approvals, postmortems) for every action they take, at the
+moment they take it.
+
+It works like a Kubernetes admission controller, but for agent tool calls:
 
 ```
 K8s:         kubectl apply (Pod YAML)  →  AdmissionWebhook  →  etcd
-PerchGuard:  agent.execute_tool()      →  PerchGuard         →  Tool Server
+PerchGuard:  agent.execute_tool()      →  PerchGuard         →  Tool Server / cluster
 ```
+
+Every call is **admitted** against the agent's declared mission, **contained**
+by the platform the agent runs on (Cilium egress policy, Kata sandboxes, via the
+PerchGuard operator), and **recorded** as a durable, queryable audit trail.
+
+> **Direction (2026-09-24):** PerchGuard is extending toward AI SRE on the
+> `ai-sre-rebuild` branch. Goal observability (drift against the declared
+> mission, measured independently of the agent) exists today. Agent SLIs and
+> environment-aware admission (blast radius, error budget) are **specified, not
+> built yet**. See
+> [AI-SRE-MASTER-SPEC.md](artifacts/docs/AI-SRE-MASTER-SPEC.md). Everything
+> else described below exists today.
 
 ---
 
@@ -43,14 +61,18 @@ hand to an auditor. Walkthrough with full sample output: [demo.md](artifacts/doc
 
 ## The Problem
 
-AI agents are fundamentally different from traditional software:
+Agents are starting to act as on-call operators: reading dashboards, forming
+hypotheses, and running remediations. Operationally, they are a new kind of
+change source:
 
-- They execute tool calls **autonomously**, without human review of each action
-- They read untrusted content (web pages, files, emails) and **act on it**
-- They can be manipulated via **indirect prompt injection** — malicious instructions embedded in content, not the user prompt
-- They can loop indefinitely, incurring **unbounded cost**
+- They **mutate infrastructure autonomously**, with no change review per action
+- They act on **untrusted input**: log lines, alert payloads, tickets, web pages. An instruction injected into a log is an instruction to your cluster
+- They **don't know the state of the environment**: prod vs staging, how many replicas an action touches, whether the error budget is already burned
+- They can **loop**: flailing through restarts, incurring unbounded cost and blast radius
 
-Without PerchGuard, an agent is a powerful but ungoverned actor.
+Existing agent guardrails come from AppSec and LLM safety (prompt injection,
+PII). PerchGuard brings the operational side: *is this change safe here, now,
+for this goal?*
 
 ---
 
